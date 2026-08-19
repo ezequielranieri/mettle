@@ -118,14 +118,19 @@ func Compute(in Input) (Result, error) {
 
 	applyBudget(in.Budget, &res)
 
-	res.Pass = true
-	for _, f := range res.Findings {
+	res.Pass = PassFromFindings(res.Findings)
+	return res, nil
+}
+
+// PassFromFindings is the pass predicate: pass iff no critical finding.
+// The pipeline reuses it after appending semantic (judge-driven) findings.
+func PassFromFindings(fs []Finding) bool {
+	for _, f := range fs {
 		if f.Severity == SeverityCritical {
-			res.Pass = false
-			break
+			return false
 		}
 	}
-	return res, nil
+	return true
 }
 
 // inScope checks one authoritative proxy call against the declared oracle

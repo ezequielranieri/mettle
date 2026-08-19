@@ -203,6 +203,28 @@ devuelve UN objeto JSON estricto por turno: `call_tool` | `decision` |
 
 ---
 
+## ADR-013 — Judge semántico conectado al pipeline
+
+**Decisión:** cada run completado (`outcome == "pass"`) con `--agent llm` se
+juzga con el LLM-as-judge del spec (`BuildRequest` arma el input desde el
+oracle del escenario + evidencia de sandbox_call/decision + output del agente;
+ADR-006/008). El veredicto se pliega en los findings del run:
+
+- `fail` → hallazgo crítico `semantic_fail` (falla el run y el gate).
+- `warning` → hallazgo warning `semantic_warning` (no falla).
+- `pass` → nada; findings del judge → info `judge`.
+- **El judge que no puede producir veredicto es un hallazgo crítico
+  `judge_error`** (ADR-006): nunca un pass silencioso.
+
+**Por qué solo `--agent llm`:** el demo agent es un fixture determinista para
+CI; juzgarlo con un LLM no aporta y exigiría keys en CI. El CI queda intacto.
+
+**Por qué el judge falla el run:** la semántica es parte del eval (ADR-006,
+hallucination by omission). Si no se puede verificar, el run no está verde —
+falla honesto y el gate lo reporta.
+
+---
+
 ## Costos
 
 - **Stack: 100% open source y gratuito.** Go, SQLite, librerías, GitHub (repo +

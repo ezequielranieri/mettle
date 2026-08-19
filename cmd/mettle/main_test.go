@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"mettle/internal/judge"
+	"mettle/internal/metrics"
 	"mettle/internal/store"
 )
 
@@ -102,6 +105,56 @@ func TestGateFailed(t *testing.T) {
 	if !gateFailed([]string{"pass"}, []bool{true}, 1) {
 		t.Error("active regression must fail the gate")
 	}
+}
+
+func TestApplyVerdict(t *testing.T) {
+	base := metrics.Result{Outcome: "pass", Pass: true}
+
+	// Judge error is critical, never a silent pass (ADR-006).
+	mres := base
+	applyVerdict(&mres, judge.Verdict{}, fmt.Errorf("provider down"))
+	if mres.Pass {
+		t.Error("judge error must fail the run")
+	}
+	if !hasCode(mres.Findings, "judge_error") {
+		t.Errorf("findings = %+v, want judge_error", mres.Findings)
+	}
+
+	// fail verdict fails the run; findings are recorded as info.
+	mres = base
+	applyVerdict(&mres, judge.Verdict{Verdict: "fail", Severity: "critical", Reason: "hallucinated", Findings: []string{"said not found"}}, nil)
+	if mres.Pass {
+		t.Error("fail verdict must fail the run")
+	}
+	if !hasCode(mres.Findings, "semantic_fail") || !hasCode(mres.Findings, "judge") {
+		t.Errorf("findings = %+v, want semantic_fail + judge", mres.Findings)
+	}
+
+	// warning keeps the run green but records the warning.
+	mres = base
+	applyVerdict(&mres, judge.Verdict{Verdict: "warning", Reason: "unclear wording"}, nil)
+	if !mres.Pass {
+		t.Error("warning verdict must keep the run green")
+	}
+	if !hasCode(mres.Findings, "semantic_warning") {
+		t.Errorf("findings = %+v, want semantic_warning", mres.Findings)
+	}
+
+	// clean pass adds nothing.
+	mres = base
+	applyVerdict(&mres, judge.Verdict{Verdict: "pass"}, nil)
+	if !mres.Pass || len(mres.Findings) != 0 {
+		t.Errorf("clean pass must add no findings: %+v", mres)
+	}
+}
+
+func hasCode(fs []metrics.Finding, code string) bool {
+	for _, f := range fs {
+		if f.Code == code {
+			return true
+		}
+	}
+	return false
 }
 
 func TestSecondRunHasNoRegression(t *testing.T) {

@@ -118,6 +118,10 @@ func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind
 	failedRuns := 0
 	var outcomes []string
 	var passes []bool
+	// Semantic judging (ADR-006/008): one LLM-as-judge per completed run,
+	// using the run's pinned judge from the spec defaults. Built lazily;
+	// only for --agent llm so the deterministic CI path needs no keys.
+	var semantic *judge.Client
 	for _, res := range results {
 		sc, ok := scByName[res.Scenario]
 		if !ok {
@@ -136,6 +140,22 @@ func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind
 		})
 		if err != nil {
 			return err
+		}
+		if agentKind == "llm" && mres.Outcome == "pass" && semantic == nil {
+			judgeCfg := cfg.Judge
+			if judgeCfg.Provider == "" {
+				judgeCfg = suite.Defaults.Judge
+			}
+			if judgeCfg.Provider != "" {
+				semantic, err = buildLLMClient(judgeCfg.Provider, judgeCfg.Model)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		if semantic != nil && mres.Outcome == "pass" {
+			v, judgeErr := semantic.Judge(ctx, judge.BuildRequest(sc, evs))
+			applyVerdict(&mres, v, judgeErr)
 		}
 		outcomes = append(outcomes, mres.Outcome)
 		passes = append(passes, mres.Pass)
@@ -190,6 +210,44 @@ func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind
 		return fmt.Errorf("gate failed: %d failing run(s), %d regression(s)", failedRuns, regressions)
 	}
 	return nil
+}
+
+// applyVerdict folds a semantic judgment into the run result. A judge that
+// cannot produce a verdict is a critical finding, never a silent pass
+// (ADR-006). verdict "fail" fails the run; "warning" is a warning; a clean
+// "pass" adds nothing.
+func applyVerdict(mres *metrics.Result, v judge.Verdict, judgeErr error) {
+	if judgeErr != nil {
+		mres.Findings = append(mres.Findings, metrics.Finding{
+			Severity: metrics.SeverityCritical,
+			Code:     "judge_error",
+			Message:  fmt.Sprintf("semantic judgment failed: %v", judgeErr),
+		})
+		mres.Pass = metrics.PassFromFindings(mres.Findings)
+		return
+	}
+	switch v.Verdict {
+	case "fail":
+		mres.Findings = append(mres.Findings, metrics.Finding{
+			Severity: metrics.SeverityCritical,
+			Code:     "semantic_fail",
+			Message:  v.Reason,
+		})
+	case "warning":
+		mres.Findings = append(mres.Findings, metrics.Finding{
+			Severity: metrics.SeverityWarning,
+			Code:     "semantic_warning",
+			Message:  v.Reason,
+		})
+	}
+	for _, f := range v.Findings {
+		mres.Findings = append(mres.Findings, metrics.Finding{
+			Severity: metrics.SeverityInfo,
+			Code:     "judge",
+			Message:  f,
+		})
+	}
+	mres.Pass = metrics.PassFromFindings(mres.Findings)
 }
 
 // gateFailed is the CI gate predicate, extracted for testing: any run that
