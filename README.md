@@ -21,7 +21,7 @@ Early development.
 - [x] Judge client (Groq / Gemini / Ollama)
 - [x] Metrics with budgets
 - [x] Regression store (SQLite)
-- [ ] Reports (markdown/HTML)
+- [x] Reports (markdown/HTML)
 - [ ] CLI + CI gate
 
 ## Quick start
