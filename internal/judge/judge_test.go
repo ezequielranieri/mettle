@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newTestServer(t *testing.T, handler func(w http.ResponseWriter, r *http.Request)) *httptest.Server {
@@ -118,9 +119,70 @@ func TestJudgeSurfacesProviderError(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "rate limited"}})
 	})
 	c := New(srv.URL, "", "judge-model")
+	c.MaxRetries = 0 // assert fail-fast after the first attempt
 	_, err := c.Judge(context.Background(), Request{})
 	if err == nil || !strings.Contains(err.Error(), "rate limited") {
 		t.Fatalf("err = %v, want provider error", err)
+	}
+}
+
+func TestChatRetriesRateLimitThenSucceeds(t *testing.T) {
+	hits := 0
+	srv := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if hits < 3 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "Rate limit reached. Please try again in 5ms."}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"content": "ok"}}},
+			"usage":   map[string]any{"prompt_tokens": 10, "completion_tokens": 4},
+		})
+	})
+	c := New(srv.URL, "", "m")
+	c.MaxRetries = 2
+	got, usage, err := c.Chat(context.Background(), []Message{{Role: "user", Content: "hi"}}, 0)
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if got != "ok" || usage.InputTokens != 10 || usage.OutputTokens != 4 {
+		t.Errorf("got=%q usage=%+v", got, usage)
+	}
+	if hits != 3 {
+		t.Errorf("hits = %d, want 3 (2 throttled + 1 success)", hits)
+	}
+}
+
+func TestChatDoesNotRetrySemanticErrors(t *testing.T) {
+	hits := 0
+	srv := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "invalid api key"}})
+	})
+	c := New(srv.URL, "", "m")
+	c.MaxRetries = 3
+	if _, _, err := c.Chat(context.Background(), []Message{{Role: "user", Content: "hi"}}, 0); err == nil || !strings.Contains(err.Error(), "invalid api key") {
+		t.Fatalf("err = %v, want invalid api key", err)
+	}
+	if hits != 1 {
+		t.Errorf("hits = %d, want 1 (auth errors are never retried)", hits)
+	}
+}
+
+func TestParseRetryDelay(t *testing.T) {
+	cases := []struct {
+		msg  string
+		want time.Duration
+	}{
+		{"Please try again in 250ms", 250 * time.Millisecond},
+		{"try again in 15.29s", 15*time.Second + 290*time.Millisecond},
+		{"rate limit reached, no delay given", 0},
+	}
+	for _, tc := range cases {
+		if got := parseRetryDelay(tc.msg); got != tc.want {
+			t.Errorf("parseRetryDelay(%q) = %v, want %v", tc.msg, got, tc.want)
+		}
 	}
 }
 

@@ -11,10 +11,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -44,15 +47,27 @@ type Client struct {
 	// some models otherwise emit native tool calls that providers reject
 	// with "Tool choice is none, but model called a tool".
 	DisableTools bool
+
+	// MaxRetries bounds retries on transient rate-limit errors. Rate limits
+	// are environmental, not semantic: ADR-006 fail-fast applies to model
+	// output, not provider throttling. A bounded backoff lets live free-tier
+	// suites finish instead of dying on the first 429.
+	MaxRetries int
+
+	// RetryBase is the base backoff delay for rate-limit retries; it doubles
+	// per attempt. A provider-supplied "try again in Xms" wins when present.
+	RetryBase time.Duration
 }
 
 // New creates a client for an arbitrary OpenAI-compatible endpoint.
 func New(baseURL, apiKey, model string) *Client {
 	return &Client{
-		BaseURL: strings.TrimRight(baseURL, "/"),
-		APIKey:  apiKey,
-		Model:   model,
-		HTTP:    &http.Client{Timeout: DefaultTimeout},
+		BaseURL:    strings.TrimRight(baseURL, "/"),
+		APIKey:     apiKey,
+		Model:      model,
+		HTTP:       &http.Client{Timeout: DefaultTimeout},
+		MaxRetries: 3,
+		RetryBase:  time.Second,
 	}
 }
 
@@ -109,12 +124,54 @@ type Usage struct {
 // token usage. It is the shared OpenAI-compatible transport: Judge builds on
 // it, and the agent under test uses it for its tool-calling loop (ADR-012).
 // The model is pinned on the client (ADR-008).
+//
+// Transient rate-limit errors are retried with bounded backoff; any other
+// error (including exhausted retries) fails fast (ADR-006).
 func (c *Client) Chat(ctx context.Context, messages []Message, temperature float64) (string, Usage, error) {
 	var zero Usage
 	if c.Model == "" {
 		return "", zero, fmt.Errorf("judge: model is required (pinned per run, ADR-008)")
 	}
 
+	attempts := c.MaxRetries + 1
+	if attempts < 1 {
+		attempts = 1
+	}
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		content, usage, err := c.chatOnce(ctx, messages, temperature)
+		if err == nil {
+			return content, usage, nil
+		}
+		lastErr = err
+		var pe *providerError
+		if i == attempts-1 || !errors.As(err, &pe) || pe.retryAfter <= 0 {
+			break
+		}
+		wait := pe.retryAfter
+		if wait > 15*time.Second {
+			wait = 15 * time.Second
+		}
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			return "", zero, ctx.Err()
+		}
+	}
+	return "", zero, lastErr
+}
+
+// providerError carries an optional retry delay for transient throttling.
+type providerError struct {
+	msg        string
+	retryAfter time.Duration
+}
+
+func (e *providerError) Error() string { return e.msg }
+
+// chatOnce performs one HTTP round trip.
+func (c *Client) chatOnce(ctx context.Context, messages []Message, temperature float64) (string, Usage, error) {
+	var zero Usage
 	req := chatRequest{Model: c.Model, Messages: messages, Temperature: temperature}
 	if c.DisableTools {
 		empty := []string{}
@@ -157,12 +214,12 @@ func (c *Client) Chat(ctx context.Context, messages []Message, temperature float
 			} `json:"error"`
 		}
 		if json.Unmarshal(body, &gemErr) == nil && len(gemErr) > 0 && gemErr[0].Error.Message != "" {
-			return "", zero, fmt.Errorf("judge: provider error: %s", gemErr[0].Error.Message)
+			return "", zero, providerMessage(gemErr[0].Error.Message)
 		}
 		return "", zero, fmt.Errorf("judge: decode response: %w", err)
 	}
 	if chat.Error != nil {
-		return "", zero, fmt.Errorf("judge: provider error: %s", chat.Error.Message)
+		return "", zero, providerMessage(chat.Error.Message)
 	}
 	if len(chat.Choices) == 0 {
 		return "", zero, fmt.Errorf("judge: empty choices")
@@ -172,6 +229,46 @@ func (c *Client) Chat(ctx context.Context, messages []Message, temperature float
 		InputTokens:  chat.Usage.PromptTokens,
 		OutputTokens: chat.Usage.CompletionTokens,
 	}, nil
+}
+
+var retryDelayRe = regexp.MustCompile(`(?i)(\d+(?:\.\d+)?)\s*(ms|s)`)
+
+// providerMessage converts a provider error message into an error, marking
+// rate-limit-shaped messages as retryable with the provider-suggested delay
+// when present. Non-throttling errors (auth, payment, unknown model, invalid
+// request) fail fast and are never retried.
+func providerMessage(msg string) error {
+	if isRateLimit(msg) {
+		return &providerError{msg: "judge: provider error: " + msg, retryAfter: parseRetryDelay(msg)}
+	}
+	return fmt.Errorf("judge: provider error: %s", msg)
+}
+
+func isRateLimit(msg string) bool {
+	lower := strings.ToLower(msg)
+	for _, needle := range []string{"rate limit", "too many requests", "exhausted", "try again", "429"} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// parseRetryDelay extracts the provider-suggested delay from messages like
+// "Please try again in 250ms" or "try again in 15.29s"; zero when absent.
+func parseRetryDelay(msg string) time.Duration {
+	m := retryDelayRe.FindStringSubmatch(msg)
+	if len(m) != 3 {
+		return 0
+	}
+	secs, err := strconv.ParseFloat(m[1], 64)
+	if err != nil {
+		return 0
+	}
+	if m[2] == "ms" {
+		secs /= 1000
+	}
+	return time.Duration(secs * float64(time.Second))
 }
 
 // Judge runs one semantic judgment and parses the structured verdict.
