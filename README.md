@@ -18,7 +18,7 @@ Early development.
 - [x] Trace model (JSONL)
 - [x] Tool sandbox / proxy
 - [x] Eval runner
-- [ ] Judge client (Groq / Gemini / Ollama)
+- [x] Judge client (Groq / Gemini / Ollama)
 - [ ] Metrics with budgets
 - [ ] Regression store (SQLite)
 - [ ] Reports (markdown/HTML)
