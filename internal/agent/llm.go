@@ -4,7 +4,8 @@
 //
 // Tool calls use a JSON-instructive protocol (ADR-012): the model returns
 // one strict JSON action per turn. It is the most portable shape across the
-// confirmed providers (Groq / Gemini / Ollama) and keeps the parsing
+// confirmed free providers (Groq / Gemini / Cerebras / SambaNova /
+// OpenRouter / Ollama) and keeps the parsing
 // fail-fast, consistent with the judge client.
 package agent
 

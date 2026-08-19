@@ -110,7 +110,7 @@ el comportamiento testeable.
 | Core / harness | Go |
 | Spec declarativo | YAML + validación por JSON Schema |
 | Tool sandbox / proxy | HTTP server en Go (httptest-based), tools falsas que loguean cada llamada |
-| LLM-as-judge | Cliente OpenAI-compatible, model-agnostic. **Proveedores gratis confirmados (los mismos que agro-agent): Groq (default: volumen/velocidad) + Gemini free tier (calidad para juicios sutiles).** Ollama local como respaldo offline/costo cero. Cambiar de judge = cambiar base URL, no reescritura |
+| LLM-as-judge | Cliente OpenAI-compatible, model-agnostic. **Proveedores gratis confirmados: Groq + Gemini free tier + Cerebras (llama-3.3-70b, 1M tokens/día) + SambaNova (30 RPM sin cap) + OpenRouter (`:free`)** — todos OpenAI-compatible; cambiar de judge = cambiar base URL, no reescritura. Ollama local como respaldo offline/costo cero |
 | Contenido de ataque | Datasets JSONL vendored como fixtures; garak/PyRIT solo como autoría |
 | Regression store | SQLite (modernc.org/sqlite, pure Go, sin CGO) |
 | Traces | JSONL estructurado, append-only: tool_call, tool_result, llm_call, decision, refusal, flag |

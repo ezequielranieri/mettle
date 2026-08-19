@@ -21,9 +21,12 @@ import (
 
 // Base URLs for the confirmed free providers (ADR-008).
 const (
-	BaseGroq   = "https://api.groq.com/openai/v1"
-	BaseGemini = "https://generativelanguage.googleapis.com/v1beta/openai"
-	BaseOllama = "http://localhost:11434/v1"
+	BaseGroq       = "https://api.groq.com/openai/v1"
+	BaseGemini     = "https://generativelanguage.googleapis.com/v1beta/openai"
+	BaseOllama     = "http://localhost:11434/v1"
+	BaseCerebras   = "https://api.cerebras.ai/v1"
+	BaseSambaNova  = "https://api.sambanova.ai/v1"
+	BaseOpenRouter = "https://openrouter.ai/api/v1"
 )
 
 // DefaultTimeout bounds one judge call.
@@ -61,6 +64,18 @@ func NewGemini(model string) *Client { return New(BaseGemini, os.Getenv("GEMINI_
 
 // NewOllama builds a local Ollama client; no key needed.
 func NewOllama(model string) *Client { return New(BaseOllama, "", model) }
+
+// NewCerebras builds a Cerebras client (free tier: llama-3.3-70b, 1M
+// tokens/day); the key comes from CEREBRAS_API_KEY.
+func NewCerebras(model string) *Client { return New(BaseCerebras, os.Getenv("CEREBRAS_API_KEY"), model) }
+
+// NewSambaNova builds a SambaNova client (free tier: llama-3.3-70b, 30 RPM
+// no daily cap); the key comes from SAMBANOVA_API_KEY.
+func NewSambaNova(model string) *Client { return New(BaseSambaNova, os.Getenv("SAMBANOVA_API_KEY"), model) }
+
+// NewOpenRouter builds an OpenRouter client; the key comes from
+// OPENROUTER_API_KEY. Free-tier models use the ":free" suffix.
+func NewOpenRouter(model string) *Client { return New(BaseOpenRouter, os.Getenv("OPENROUTER_API_KEY"), model) }
 
 // Request is the input to a semantic judgment.
 type Request struct {

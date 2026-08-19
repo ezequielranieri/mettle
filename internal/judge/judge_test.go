@@ -166,6 +166,9 @@ func TestChatDisableToolsPayload(t *testing.T) {
 func TestBuilders(t *testing.T) {
 	t.Setenv("GROQ_API_KEY", "groq-key")
 	t.Setenv("GEMINI_API_KEY", "gemini-key")
+	t.Setenv("CEREBRAS_API_KEY", "cerebras-key")
+	t.Setenv("SAMBANOVA_API_KEY", "sambanova-key")
+	t.Setenv("OPENROUTER_API_KEY", "openrouter-key")
 
 	g := NewGroq("llama-3.3-70b-versatile")
 	if g.BaseURL != BaseGroq || g.APIKey != "groq-key" || g.Model != "llama-3.3-70b-versatile" {
@@ -180,6 +183,21 @@ func TestBuilders(t *testing.T) {
 	o := NewOllama("llama3.2")
 	if o.BaseURL != BaseOllama || o.APIKey != "" {
 		t.Errorf("NewOllama = %+v", o)
+	}
+
+	c := NewCerebras("llama-3.3-70b")
+	if c.BaseURL != BaseCerebras || c.APIKey != "cerebras-key" {
+		t.Errorf("NewCerebras = %+v", c)
+	}
+
+	s := NewSambaNova("llama-3.3-70b")
+	if s.BaseURL != BaseSambaNova || s.APIKey != "sambanova-key" {
+		t.Errorf("NewSambaNova = %+v", s)
+	}
+
+	r := NewOpenRouter("meta-llama/llama-3.3-70b-instruct:free")
+	if r.BaseURL != BaseOpenRouter || r.APIKey != "openrouter-key" || r.Model != "meta-llama/llama-3.3-70b-instruct:free" {
+		t.Errorf("NewOpenRouter = %+v", r)
 	}
 }
 

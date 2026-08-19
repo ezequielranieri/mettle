@@ -352,8 +352,14 @@ func buildLLMClient(provider, model string) (*judge.Client, error) {
 		return judge.NewGemini(model), nil
 	case "ollama":
 		return judge.NewOllama(model), nil
+	case "cerebras":
+		return judge.NewCerebras(model), nil
+	case "sambanova":
+		return judge.NewSambaNova(model), nil
+	case "openrouter":
+		return judge.NewOpenRouter(model), nil
 	case "":
-		return nil, fmt.Errorf("--agent llm requires a provider (groq|gemini|ollama) in the spec or --provider")
+		return nil, fmt.Errorf("--agent llm requires a provider (groq|gemini|ollama|cerebras|sambanova|openrouter) in the spec or --provider")
 	default:
 		return nil, fmt.Errorf("unknown provider %q", provider)
 	}
