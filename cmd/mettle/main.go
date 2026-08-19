@@ -116,6 +116,8 @@ func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind
 	}
 
 	failedRuns := 0
+	var outcomes []string
+	var passes []bool
 	for _, res := range results {
 		sc, ok := scByName[res.Scenario]
 		if !ok {
@@ -135,7 +137,9 @@ func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind
 		if err != nil {
 			return err
 		}
-		if !mres.Pass {
+		outcomes = append(outcomes, mres.Outcome)
+		passes = append(passes, mres.Pass)
+		if mres.Outcome != "pass" || !mres.Pass {
 			failedRuns++
 		}
 		meta := store.Meta{Suite: suite.Name, Judge: judgeLabel(suite, cfg), TraceFile: res.TraceFile}
@@ -173,17 +177,30 @@ func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind
 		}
 	}
 
-	// CI gate (ADR-009): this run fails on critical findings or regressions.
+	// CI gate (ADR-009): this run fails on errored runs, critical findings
+	// or regressions. An errored run is NOT a pass — reporting it green would
+	// be lying by omission (ADR-006).
 	regressions := 0
 	for _, reg := range regs {
 		if reg.Compared && reg.IsRegression {
 			regressions++
 		}
 	}
-	if failedRuns > 0 || regressions > 0 {
+	if gateFailed(outcomes, passes, regressions) {
 		return fmt.Errorf("gate failed: %d failing run(s), %d regression(s)", failedRuns, regressions)
 	}
 	return nil
+}
+
+// gateFailed is the CI gate predicate, extracted for testing: any run that
+// errored or produced critical findings, or any active regression, fails.
+func gateFailed(outcomes []string, passes []bool, regressions int) bool {
+	for i := range outcomes {
+		if outcomes[i] != "pass" || !passes[i] {
+			return true
+		}
+	}
+	return regressions > 0
 }
 
 func cmdReport(args []string) error {

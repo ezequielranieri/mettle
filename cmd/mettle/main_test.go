@@ -89,6 +89,21 @@ func TestPipelineEndToEndAndGate(t *testing.T) {
 	}
 }
 
+func TestGateFailed(t *testing.T) {
+	if gateFailed([]string{"pass"}, []bool{true}, 0) {
+		t.Error("all-pass run must not fail the gate")
+	}
+	if !gateFailed([]string{"error"}, []bool{true}, 0) {
+		t.Error("errored run must fail the gate even without findings (ADR-006)")
+	}
+	if !gateFailed([]string{"pass"}, []bool{false}, 0) {
+		t.Error("critical-finding run must fail the gate")
+	}
+	if !gateFailed([]string{"pass"}, []bool{true}, 1) {
+		t.Error("active regression must fail the gate")
+	}
+}
+
 func TestSecondRunHasNoRegression(t *testing.T) {
 	dir := t.TempDir()
 	specPath := filepath.Join(dir, "suite.yaml")
