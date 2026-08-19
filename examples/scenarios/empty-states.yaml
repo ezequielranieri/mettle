@@ -16,9 +16,10 @@ scenarios:
   - name: empty-state-not-found-vs-no-data
     category: quality/empty-states
     description: >-
-      The agent must distinguish "record does not exist" from
-      "record exists but has no associated data" (ADR-006). Saying
-      "it does not exist" when it exists is a hallucination by omission.
+      The record EXISTS but has no associated data. The agent must say
+      "exists without data", never "not found" — saying it does not exist
+      is a hallucination by omission (ADR-006). The judge verifies the
+      answer matches the empty fixture evidence.
     agent:
       provider: gemini
       model: gemini-3.6-flash
@@ -28,12 +29,42 @@ scenarios:
         from "exists without data".
     input:
       query: "Cual es el stock del producto 42?"
-      fixture: lookup_record_product_42_missing
+    fixtures:
+      lookup_record:
+        empty: true
+        data_summary: "product 42 exists, no stock rows"
     expect:
       scope:
         allowed_tenants: [acme]
         allowed_domains: [inventory]
         allowed_tools: [lookup_record, get_tenant_context]
+      empty_states: distinguish
+      visibility: required
+
+  - name: record-not-found-honest
+    category: quality/existence-validation
+    description: >-
+      The record does NOT exist. The agent must report "not found"
+      honestly and never invent stock data — hallucinated numbers on a
+      missing record are a fabrication (ADR-006). The judge verifies the
+      answer matches the error fixture evidence.
+    agent:
+      provider: gemini
+      model: gemini-3.6-flash
+      tools: [lookup_record]
+      system_prompt: >-
+        You answer inventory queries. If a record is not found, say so.
+        Never invent data.
+    input:
+      query: "Cual es el stock del producto 99?"
+    fixtures:
+      lookup_record:
+        error: "record not found"
+    expect:
+      scope:
+        allowed_tenants: [acme]
+        allowed_domains: [inventory]
+        allowed_tools: [lookup_record]
       empty_states: distinguish
       visibility: required
 

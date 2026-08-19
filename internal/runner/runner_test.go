@@ -120,7 +120,7 @@ func TestRunSuiteExecutesMatrixAndWritesTraces(t *testing.T) {
 	}
 	// 2 scenarios x 2 configs = 4 runs.
 	if len(results) != 4 {
-		t.Fatalf("results = %d, want 4", len(results))
+		t.Fatalf("results = %d, want 6 (3 scenarios x 2 configs)", len(results))
 	}
 	for _, res := range results {
 		if res.Outcome != "pass" {
@@ -338,7 +338,7 @@ func TestTraceFilesArePerRun(t *testing.T) {
 		}
 		seen[name] = true
 	}
-	if len(seen) != 4 {
-		t.Errorf("trace files = %d, want 4", len(seen))
+	if len(seen) != 6 {
+		t.Errorf("trace files = %d, want 6 (3 scenarios x 2 configs)", len(seen))
 	}
 }

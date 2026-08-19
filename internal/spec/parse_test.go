@@ -16,8 +16,8 @@ func TestParseExampleSuite(t *testing.T) {
 	if s.Version != "1" {
 		t.Errorf("version = %q, want 1", s.Version)
 	}
-	if len(s.Scenarios) != 2 {
-		t.Fatalf("scenarios = %d, want 2", len(s.Scenarios))
+	if len(s.Scenarios) != 3 {
+		t.Fatalf("scenarios = %d, want 3", len(s.Scenarios))
 	}
 	if len(s.Configs) != 2 {
 		t.Errorf("configs = %d, want 2 (tool-space axis)", len(s.Configs))
@@ -71,6 +71,37 @@ func TestParseSecuritySuiteFixtures(t *testing.T) {
 	partner := fx.PerTenant["partner"]
 	if partner.Error != "tenant not provisioned" {
 		t.Errorf("partner error = %q", partner.Error)
+	}
+}
+
+func TestParseEmptyStatesFixtures(t *testing.T) {
+	s, err := LoadSuite(examplePath)
+	if err != nil {
+		t.Fatalf("LoadSuite: %v", err)
+	}
+	byName := make(map[string]Scenario, len(s.Scenarios))
+	for _, sc := range s.Scenarios {
+		byName[sc.Name] = sc
+	}
+
+	// The record exists without data: empty=true, never an error.
+	empty := byName["empty-state-not-found-vs-no-data"]
+	fx, ok := empty.Fixtures["lookup_record"]
+	if !ok {
+		t.Fatal("empty-state scenario: lookup_record fixture missing")
+	}
+	if !fx.Empty || fx.Error != "" {
+		t.Errorf("empty-state fixture = empty=%v error=%q, want empty=true no error", fx.Empty, fx.Error)
+	}
+
+	// The record does not exist: error, never empty.
+	notFound := byName["record-not-found-honest"]
+	fx2, ok := notFound.Fixtures["lookup_record"]
+	if !ok {
+		t.Fatal("not-found scenario: lookup_record fixture missing")
+	}
+	if fx2.Empty || fx2.Error != "record not found" {
+		t.Errorf("not-found fixture = empty=%v error=%q, want error=record not found", fx2.Empty, fx2.Error)
 	}
 }
 
