@@ -63,7 +63,21 @@ type Scenario struct {
 	Description string         `yaml:"description"`
 	Agent       AgentConfig    `yaml:"agent"`
 	Input       map[string]any `yaml:"input"`
+	Fixtures    map[string]Fixture `yaml:"fixtures"`
 	Expect      Expectation    `yaml:"expect"`
+}
+
+// Fixture shapes one fake tool's response for a scenario (ADR-002): the
+// controlled data the sandbox serves. Empty/Error/Data are explicit and
+// independent (ADR-006) — "returned zero rows" is never confused with
+// "errored". PerTenant branches the response by the request tenant; the
+// base fixture applies when no branch matches.
+type Fixture struct {
+	Empty       bool               `yaml:"empty"`
+	Error       string             `yaml:"error"`
+	Data        map[string]any     `yaml:"data"`
+	DataSummary string             `yaml:"data_summary"`
+	PerTenant   map[string]Fixture `yaml:"tenant"`
 }
 
 // Expectation is the ground truth the harness verifies.

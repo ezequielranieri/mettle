@@ -27,3 +27,8 @@ jobs:
             --store /tmp/ci-eval.db \
             --traces /tmp/ci-traces \
             --report /tmp/ci-report.md
+          go run ./cmd/mettle run \
+            --spec examples/scenarios/security.yaml \
+            --store /tmp/ci-eval-security.db \
+            --traces /tmp/ci-security-traces \
+            --report /tmp/ci-security-report.md

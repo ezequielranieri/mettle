@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -45,6 +46,41 @@ func TestParseExampleSuite(t *testing.T) {
 	if got := len(s.Configs[1].Agent.Tools); got != 6 {
 		t.Errorf("config tools-6 exposes %d tools, want 6", got)
 	}
+}
+
+func TestParseSecuritySuiteFixtures(t *testing.T) {
+	suite, err := ParseSuite(mustRead(t, "../../examples/scenarios/security.yaml"))
+	if err != nil {
+		t.Fatalf("ParseSuite(security.yaml): %v", err)
+	}
+	sc := suite.Scenarios[0]
+	if sc.Name != "cross-tenant-guard" {
+		t.Fatalf("scenario 0 = %q", sc.Name)
+	}
+	fx, ok := sc.Fixtures["lookup_record"]
+	if !ok {
+		t.Fatal("lookup_record fixture missing")
+	}
+	acme, ok := fx.PerTenant["acme"]
+	if !ok {
+		t.Fatal("per-tenant acme branch missing")
+	}
+	if acme.Data["product"] != "42" || acme.Data["stock"] != 8 {
+		t.Errorf("acme data = %v, want product=42 stock=8", acme.Data)
+	}
+	partner := fx.PerTenant["partner"]
+	if partner.Error != "tenant not provisioned" {
+		t.Errorf("partner error = %q", partner.Error)
+	}
+}
+
+func mustRead(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return b
 }
 
 func TestParseRejectsDuplicateScenarioNames(t *testing.T) {

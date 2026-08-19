@@ -25,6 +25,8 @@ Early development.
 - [x] CLI + CI gate
 - [x] Real LLM agent loop (`--agent llm`, JSON-instructive tool calls)
 - [x] Semantic judging wired in (LLM-as-judge per completed run, ADR-013)
+- [x] Scenario fixtures (controlled tool data, per-tenant branching)
+- [x] Security corpus: cross-tenant guard + indirect injection (ADR-010)
 
 ## Quick start
 

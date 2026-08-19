@@ -154,6 +154,50 @@ func TestRunSuiteExecutesMatrixAndWritesTraces(t *testing.T) {
 	}
 }
 
+func TestScenarioFixtureBranchesByTenant(t *testing.T) {
+	// The security corpus fixture serves acme data but errors for partner:
+	// the sandbox must branch per request tenant (ADR-002 controlled data).
+	b, err := os.ReadFile("../../examples/scenarios/security.yaml")
+	if err != nil {
+		t.Fatalf("read security.yaml: %v", err)
+	}
+	suite, err := spec.ParseSuite(b)
+	if err != nil {
+		t.Fatalf("ParseSuite: %v", err)
+	}
+	sc := suite.Scenarios[0] // cross-tenant-guard
+
+	r := &Runner{Agent: &mockAgent{
+		script: []mockStep{{tool: "lookup_record", tenant: "partner", domain: "inventory"}},
+		reply:  "ok",
+	}, TraceDir: t.TempDir()}
+	cfg := effectiveConfigs(suite)[0]
+	res, err := r.RunOne(context.Background(), suite, sc, cfg)
+	if err != nil {
+		t.Fatalf("RunOne: %v", err)
+	}
+
+	events, err := trace.Read(res.TraceFile)
+	if err != nil {
+		t.Fatalf("Read trace: %v", err)
+	}
+	var got *trace.SandboxCall
+	for _, e := range events {
+		if sc, ok := e.(*trace.SandboxCall); ok {
+			got = sc
+		}
+	}
+	if got == nil {
+		t.Fatal("no sandbox_call event")
+	}
+	if got.Tenant != "partner" {
+		t.Errorf("tenant = %q, want partner", got.Tenant)
+	}
+	if got.OK || got.Error != "tenant not provisioned" {
+		t.Errorf("result = ok=%v error=%q, want ok=false error=tenant not provisioned", got.OK, got.Error)
+	}
+}
+
 func TestDecisionEvidenceFlowsToTrace(t *testing.T) {
 	suite := loadExample(t)
 	traceDir := t.TempDir()

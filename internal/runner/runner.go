@@ -94,6 +94,10 @@ func (r *Runner) RunOne(ctx context.Context, suite *spec.EvalSuite, sc spec.Scen
 	}
 	sb := sandbox.New()
 	for _, name := range tools {
+		if fx, ok := sc.Fixtures[name]; ok {
+			sb.Register(fixtureTool(name, fx))
+			continue
+		}
 		sb.Register(sandbox.FixtureTool(name, "", "", false, "", "", map[string]any{"source": "fixture"}))
 	}
 	srv := httptest.NewServer(sb.Handler())
@@ -186,6 +190,47 @@ func effectiveConfigs(suite *spec.EvalSuite) []spec.RunConfig {
 		Judge:  suite.Defaults.Judge,
 		Budget: suite.Defaults.Budget,
 	}}
+}
+
+// fixtureTool builds a scenario-controlled fake tool (ADR-002): it branches
+// per request tenant when the fixture declares branches, else returns the
+// base fixture. OK/Empty/Error stay explicit and independent (ADR-006).
+func fixtureTool(name string, fx spec.Fixture) sandbox.Tool {
+	return sandbox.Tool{
+		Name: name,
+		Handle: func(_ context.Context, req sandbox.CallRequest) sandbox.CallResult {
+			f := fx
+			if len(fx.PerTenant) > 0 {
+				if t, ok := fx.PerTenant[req.Tenant]; ok {
+					f = t
+				}
+			}
+			return fixtureResult(f)
+		},
+	}
+}
+
+func fixtureResult(f spec.Fixture) sandbox.CallResult {
+	switch {
+	case f.Error != "":
+		return sandbox.CallResult{OK: false, Error: f.Error}
+	case f.Empty:
+		summary := f.DataSummary
+		if summary == "" {
+			summary = "0 rows"
+		}
+		return sandbox.CallResult{OK: true, Empty: true, DataSummary: summary}
+	case f.Data != nil:
+		summary := f.DataSummary
+		if summary == "" {
+			summary = fmt.Sprintf("%d rows", len(f.Data))
+		}
+		return sandbox.CallResult{OK: true, Data: f.Data, DataSummary: summary}
+	case f.DataSummary != "":
+		return sandbox.CallResult{OK: true, DataSummary: f.DataSummary}
+	default:
+		return sandbox.CallResult{OK: true, DataSummary: "(fixture)"}
+	}
 }
 
 // runIDFor derives a filesystem-safe, unique run id from scenario and

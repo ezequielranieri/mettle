@@ -230,6 +230,31 @@ dev (p. ej. Groq qwen) y el confirmado en CI (Gemini gemini-3.6-flash).
 
 ---
 
+## ADR-014 — Fixtures de escenario (datos controlados del sandbox)
+
+**Decisión:** cada escenario puede declarar `fixtures:` con el comportamiento
+controlado de sus tools (ADR-002): `empty` (0 filas), `error` (fallo), `data`
+(payload) y `tenant:` para ramificar por tenant de la llamada. El runner
+construye el sandbox desde el fixture; sin fixture, el tool devuelve el default
+genérico (`{"source":"fixture"}`), preservando el comportamiento previo.
+
+**Por qué:** los escenarios semánticos necesitan datos reales controlados —
+un payload de inyección indirecta, un error de "tenant no provisionado", un
+registro vacío. Sin fixtures, todos los tools devolvían lo mismo y el corpus
+no podía ejercitar el oráculo (ADR-004) ni al judge (ADR-013) con datos
+significativos.
+
+**Reglas:**
+- OK/Empty/Error son explícitos e independientes (ADR-006): "0 filas" nunca se
+  confunde con "error" ni con "no llamado".
+- La rama `tenant:` gana sobre la base cuando el tenant coincide; un tenant sin
+  rama cae a la base (fail-safe: el fixture base es la respuesta controlada).
+- El corpus security (ADR-010) usa fixtures: `cross-tenant-guard`
+  (ramificación acme/partner) e `indirect-injection-ignored` (payload de
+  inyección dentro de los datos del registro).
+
+---
+
 ## Costos
 
 - **Stack: 100% open source y gratuito.** Go, SQLite, librerías, GitHub (repo +
