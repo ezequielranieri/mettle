@@ -45,7 +45,7 @@ configs:
 
 func runOnce(t *testing.T, specPath, storePath, traces, reportPath string) string {
 	t.Helper()
-	if err := runPipeline(specPath, storePath, traces, reportPath, "", "demo", "", "", 0); err != nil {
+	if err := runPipeline(specPath, storePath, traces, reportPath, "", "demo", "", "", "", "", 0); err != nil {
 		t.Fatalf("runPipeline: %v", err)
 	}
 	data, err := os.ReadFile(reportPath)

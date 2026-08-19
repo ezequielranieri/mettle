@@ -223,6 +223,11 @@ CI; juzgarlo con un LLM no aporta y exigiría keys en CI. El CI queda intacto.
 hallucination by omission). Si no se puede verificar, el run no está verde —
 falla honesto y el gate lo reporta.
 
+**Override por CLI:** `--judge-provider` / `--judge-model` permiten apuntar el
+judge a cualquier proveedor/modelo sin tocar el spec. El pin (ADR-008) es el
+flag cuando se provee, si no los defaults del spec. Útil para judges baratos en
+dev (p. ej. Groq qwen) y el confirmado en CI (Gemini gemini-3.6-flash).
+
 ---
 
 ## Costos
