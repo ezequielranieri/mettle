@@ -16,7 +16,7 @@ Early development.
 
 - [x] Project skeleton + spec model (slice 1)
 - [x] Trace model (JSONL)
-- [ ] Tool sandbox / proxy
+- [x] Tool sandbox / proxy
 - [ ] Eval runner
 - [ ] Judge client (Groq / Gemini / Ollama)
 - [ ] Metrics with budgets
