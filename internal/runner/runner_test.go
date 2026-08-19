@@ -118,8 +118,8 @@ func TestRunSuiteExecutesMatrixAndWritesTraces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunSuite: %v", err)
 	}
-	// 2 scenarios x 2 configs = 4 runs.
-	if len(results) != 4 {
+	// 3 scenarios x 2 configs = 6 runs.
+	if len(results) != 6 {
 		t.Fatalf("results = %d, want 6 (3 scenarios x 2 configs)", len(results))
 	}
 	for _, res := range results {
