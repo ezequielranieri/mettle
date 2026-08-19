@@ -1,0 +1,16 @@
+# Binaries
+*.exe
+*.test
+*.out
+bin/
+
+# Local eval state
+*.db
+*.db-wal
+*.db-shm
+traces/
+reports/
+
+# Editor
+.idea/
+.vscode/
