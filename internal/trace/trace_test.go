@@ -22,6 +22,7 @@ func TestRoundTripPreservesDecisionEvidence(t *testing.T) {
 		&LLMCall{Base: Base{RunID: "run-1", Scenario: "empty-state-not-found-vs-no-data", Config: "tools-3", Kind: KindLLMCall}, Provider: "groq", Model: "llama-3.3-70b-versatile", InputTokens: 120, OutputTokens: 45, LatencyMS: 812},
 		&ToolCall{Base: Base{RunID: "run-1", Scenario: "empty-state-not-found-vs-no-data", Config: "tools-3", Kind: KindToolCall}, Tool: "lookup_record", Args: map[string]any{"product_id": 42}, Tenant: "acme", Domain: "inventory", Evidence: "routed by deterministic router", InScope: &inScope},
 		&ToolResult{Base: Base{RunID: "run-1", Scenario: "empty-state-not-found-vs-no-data", Config: "tools-3", Kind: KindToolResult}, Tool: "lookup_record", OK: true, Empty: true, DataSummary: "zero rows"},
+		&SandboxCall{Base: Base{RunID: "run-1", Scenario: "empty-state-not-found-vs-no-data", Config: "tools-3", Kind: KindSandboxCall}, Tool: "lookup_record", Args: map[string]any{"product_id": 42}, Tenant: "acme", Domain: "inventory", OK: true, Empty: true, DataSummary: "zero rows"},
 		&Decision{Base: Base{RunID: "run-1", Scenario: "silent-restriction-must-log", Config: "tools-3", Kind: KindDecision}, DecisionKind: "conflict_resolution", Rule: "restrictive_wins", Outcome: "restricted", Visible: false},
 		&Flag{Base: Base{RunID: "run-1", Scenario: "silent-restriction-must-log", Config: "tools-3", Kind: KindFlag}, Name: "restriction_logged", Value: "missing"},
 		&AgentOutput{Base: Base{RunID: "run-1", Scenario: "silent-restriction-must-log", Config: "tools-3", Kind: KindAgentOutput}, Text: "No tengo acceso a precios de proveedores."},
@@ -45,7 +46,7 @@ func TestRoundTripPreservesDecisionEvidence(t *testing.T) {
 	}
 
 	// Kind order preserved.
-	wantKinds := []Kind{KindRunStart, KindLLMCall, KindToolCall, KindToolResult, KindDecision, KindFlag, KindAgentOutput, KindRunEnd}
+	wantKinds := []Kind{KindRunStart, KindLLMCall, KindToolCall, KindToolResult, KindSandboxCall, KindDecision, KindFlag, KindAgentOutput, KindRunEnd}
 	for i, k := range wantKinds {
 		if got[i].Envelope().Kind != k {
 			t.Errorf("event %d kind = %q, want %q", i, got[i].Envelope().Kind, k)
@@ -59,7 +60,7 @@ func TestRoundTripPreservesDecisionEvidence(t *testing.T) {
 	}
 
 	// ADR-005: the silent restriction is recorded with Visible=false.
-	dec := got[4].(*Decision)
+	dec := got[5].(*Decision)
 	if dec.Visible {
 		t.Error("Decision.Visible = true, want false (silent restriction)")
 	}
@@ -77,6 +78,12 @@ func TestRoundTripPreservesDecisionEvidence(t *testing.T) {
 	tc := got[2].(*ToolCall)
 	if tc.InScope == nil || *tc.InScope {
 		t.Errorf("ToolCall.InScope = %v, want false", tc.InScope)
+	}
+
+	// ADR-005: the authoritative proxy record round-trips.
+	sb := got[4].(*SandboxCall)
+	if sb.Tool != "lookup_record" || !sb.Empty || sb.Tenant != "acme" {
+		t.Errorf("SandboxCall = %+v", sb)
 	}
 }
 

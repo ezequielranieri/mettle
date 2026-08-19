@@ -20,14 +20,15 @@ import (
 type Kind string
 
 const (
-	KindRunStart    Kind = "run_start"
-	KindRunEnd      Kind = "run_end"
-	KindLLMCall     Kind = "llm_call"
-	KindToolCall    Kind = "tool_call"
-	KindToolResult  Kind = "tool_result"
-	KindDecision    Kind = "decision"
-	KindFlag        Kind = "flag"
-	KindAgentOutput Kind = "agent_output"
+	KindRunStart     Kind = "run_start"
+	KindRunEnd       Kind = "run_end"
+	KindLLMCall      Kind = "llm_call"
+	KindToolCall     Kind = "tool_call"
+	KindToolResult   Kind = "tool_result"
+	KindSandboxCall  Kind = "sandbox_call"
+	KindDecision     Kind = "decision"
+	KindFlag         Kind = "flag"
+	KindAgentOutput  Kind = "agent_output"
 )
 
 // Event is any trace event exposing its envelope.
@@ -98,6 +99,22 @@ type ToolResult struct {
 	DataSummary string `json:"data_summary,omitempty"`
 }
 
+// SandboxCall is the authoritative call record from the tool proxy
+// (ADR-005). It is the ground truth of what actually happened, independent
+// of the agent's self-reported ToolCall events. The oracle check (ADR-004)
+// runs on these events.
+type SandboxCall struct {
+	Base
+	Tool        string         `json:"tool"`
+	Args        map[string]any `json:"args,omitempty"`
+	Tenant      string         `json:"tenant,omitempty"`
+	Domain      string         `json:"domain,omitempty"`
+	OK          bool           `json:"ok"`
+	Empty       bool           `json:"empty"`
+	Error       string         `json:"error,omitempty"`
+	DataSummary string         `json:"data_summary,omitempty"`
+}
+
 // Decision records a decision the agent made and whether it was visible
 // (ADR-005 visibility matrix). Silent restriction is indistinguishable from
 // a bug: Visible=false is a finding.
@@ -128,6 +145,7 @@ func (e *RunEnd) Envelope() *Base      { return &e.Base }
 func (e *LLMCall) Envelope() *Base     { return &e.Base }
 func (e *ToolCall) Envelope() *Base    { return &e.Base }
 func (e *ToolResult) Envelope() *Base  { return &e.Base }
+func (e *SandboxCall) Envelope() *Base { return &e.Base }
 func (e *Decision) Envelope() *Base    { return &e.Base }
 func (e *Flag) Envelope() *Base        { return &e.Base }
 func (e *AgentOutput) Envelope() *Base { return &e.Base }
@@ -235,6 +253,8 @@ func decodeKind(k Kind, data []byte) (Event, error) {
 		e = &ToolCall{}
 	case KindToolResult:
 		e = &ToolResult{}
+	case KindSandboxCall:
+		e = &SandboxCall{}
 	case KindDecision:
 		e = &Decision{}
 	case KindFlag:

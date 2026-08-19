@@ -133,7 +133,27 @@ func (r *Runner) RunOne(ctx context.Context, suite *spec.EvalSuite, sc spec.Scen
 	}, em)
 	dur := time.Since(start)
 
+	// Persist the authoritative proxy records (ADR-005): the ground truth
+	// of what actually happened, independent of the agent's self-report.
 	res := Result{RunID: runID, Scenario: sc.Name, Config: cfg.Name, TraceFile: tracePath}
+	records := sb.Records()
+	for _, rec := range records {
+		if err := em(&trace.SandboxCall{
+			Base:        trace.Base{RunID: runID, Scenario: sc.Name, Config: cfg.Name, Kind: trace.KindSandboxCall},
+			Tool:        rec.Request.Tool,
+			Args:        rec.Request.Args,
+			Tenant:      rec.Request.Tenant,
+			Domain:      rec.Request.Domain,
+			OK:          rec.Result.OK,
+			Empty:       rec.Result.Empty,
+			Error:       rec.Result.Error,
+			DataSummary: rec.Result.DataSummary,
+		}); err != nil {
+			return res, err
+		}
+	}
+
+	res.ToolCalls = len(records)
 	if err != nil {
 		res.Outcome = "error"
 		res.Reason = err.Error()
@@ -147,7 +167,6 @@ func (r *Runner) RunOne(ctx context.Context, suite *spec.EvalSuite, sc spec.Scen
 		return res, err
 	}
 	res.Outcome = "pass"
-	res.ToolCalls = len(sb.Records())
 	if err := em(&trace.RunEnd{Base: trace.Base{RunID: runID, Scenario: sc.Name, Config: cfg.Name, Kind: trace.KindRunEnd}, Outcome: "pass", Duration: dur}); err != nil {
 		return res, err
 	}

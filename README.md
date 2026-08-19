@@ -19,7 +19,7 @@ Early development.
 - [x] Tool sandbox / proxy
 - [x] Eval runner
 - [x] Judge client (Groq / Gemini / Ollama)
-- [ ] Metrics with budgets
+- [x] Metrics with budgets
 - [ ] Regression store (SQLite)
 - [ ] Reports (markdown/HTML)
 - [ ] CLI + CI gate

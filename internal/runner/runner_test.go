@@ -132,14 +132,16 @@ func TestRunSuiteExecutesMatrixAndWritesTraces(t *testing.T) {
 	}
 
 	// The full decision evidence is in the trace: run_start, llm_call,
-	// tool_call, tool_result, agent_output, run_end (ADR-005).
+	// tool_call, tool_result, the authoritative sandbox_call (ADR-005),
+	// agent_output, run_end.
 	events, err := trace.Read(results[0].TraceFile)
 	if err != nil {
 		t.Fatalf("Read trace: %v", err)
 	}
 	wantKinds := []trace.Kind{
 		trace.KindRunStart, trace.KindLLMCall, trace.KindToolCall,
-		trace.KindToolResult, trace.KindAgentOutput, trace.KindRunEnd,
+		trace.KindToolResult, trace.KindSandboxCall, trace.KindAgentOutput,
+		trace.KindRunEnd,
 	}
 	for i, k := range wantKinds {
 		if events[i].Envelope().Kind != k {
