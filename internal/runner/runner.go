@@ -1,0 +1,184 @@
+// Package runner executes the evaluation matrix: scenario x config, wiring
+// the spec, the tool sandbox and the JSONL trace together (ADR-003, ADR-008).
+//
+// The runner captures evidence; verification and metrics run on the trace
+// afterwards. The runner never fabricates compliance: the authoritative
+// call log lives in the sandbox, not in the agent's self-report (ADR-005).
+package runner
+
+import (
+	"context"
+	"fmt"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"mettle/internal/sandbox"
+	"mettle/internal/spec"
+	"mettle/internal/trace"
+)
+
+// Agent is the system under test. It receives the scenario input and the
+// sandbox endpoint where its tools live, and emits trace events as it
+// executes (llm calls, tool calls, decisions, flags).
+type Agent interface {
+	Run(ctx context.Context, in AgentInput, em Emitter) (AgentResult, error)
+}
+
+// AgentInput is everything the agent under test needs for one run.
+type AgentInput struct {
+	RunID      string
+	Scenario   spec.Scenario
+	Config     spec.RunConfig
+	Tools      []string // exposed tool-space (ADR-009 axis)
+	SandboxURL string
+}
+
+// AgentResult is what the agent returns to the runner.
+type AgentResult struct {
+	Text string // final user-facing output (visibility input, ADR-005)
+}
+
+// Emitter delivers trace events from the agent to the run trace.
+type Emitter func(e trace.Event) error
+
+// Result is the envelope of one run (scenario x config).
+type Result struct {
+	RunID     string
+	Scenario  string
+	Config    string
+	Outcome   string // pass | error
+	Reason    string
+	TraceFile string
+	ToolCalls int
+}
+
+// Runner executes suites against one agent.
+type Runner struct {
+	Agent    Agent
+	TraceDir string
+}
+
+// RunSuite runs the full matrix scenario x config (ADR-003).
+func (r *Runner) RunSuite(ctx context.Context, suite *spec.EvalSuite) ([]Result, error) {
+	var results []Result
+	for _, sc := range suite.Scenarios {
+		for _, cfg := range effectiveConfigs(suite) {
+			res, err := r.RunOne(ctx, suite, sc, cfg)
+			if err != nil {
+				return results, fmt.Errorf("run %s x %s: %w", sc.Name, cfg.Name, err)
+			}
+			results = append(results, res)
+		}
+	}
+	return results, nil
+}
+
+// RunOne executes a single scenario x config and writes its trace.
+func (r *Runner) RunOne(ctx context.Context, suite *spec.EvalSuite, sc spec.Scenario, cfg spec.RunConfig) (Result, error) {
+	runID := runIDFor(sc.Name, cfg.Name)
+	tracePath := filepath.Join(r.TraceDir, runID+".jsonl")
+	w, err := trace.NewWriter(tracePath)
+	if err != nil {
+		return Result{}, fmt.Errorf("open trace %s: %w", tracePath, err)
+	}
+	defer w.Close()
+
+	// Tool-space: the config exposes the tools (ADR-009 axis); a scenario
+	// without config-level tools falls back to its own declared tools.
+	tools := cfg.Agent.Tools
+	if len(tools) == 0 {
+		tools = sc.Agent.Tools
+	}
+	sb := sandbox.New()
+	for _, name := range tools {
+		sb.Register(sandbox.FixtureTool(name, "", "", false, "", "", map[string]any{"source": "fixture"}))
+	}
+	srv := httptest.NewServer(sb.Handler())
+	defer srv.Close()
+
+	em := func(e trace.Event) error { return w.Write(e) }
+
+	// Judge fallback: config overrides defaults; empty inherits (ADR-008 pin).
+	judge := cfg.Judge
+	if judge.Provider == "" {
+		judge = suite.Defaults.Judge
+	}
+	judgeLabel := "unset"
+	if judge.Provider != "" {
+		judgeLabel = judge.Provider + "/" + judge.Model
+	}
+
+	suiteName := suite.Name
+	if suiteName == "" {
+		suiteName = "unnamed"
+	}
+	if err := em(&trace.RunStart{
+		Base:        trace.Base{RunID: runID, Scenario: sc.Name, Config: cfg.Name, Kind: trace.KindRunStart},
+		Suite:       suiteName,
+		SpecVersion: suite.Version,
+		Judge:       judgeLabel,
+	}); err != nil {
+		return Result{}, err
+	}
+
+	start := time.Now()
+	out, err := r.Agent.Run(ctx, AgentInput{
+		RunID:      runID,
+		Scenario:   sc,
+		Config:     cfg,
+		Tools:      tools,
+		SandboxURL: srv.URL,
+	}, em)
+	dur := time.Since(start)
+
+	res := Result{RunID: runID, Scenario: sc.Name, Config: cfg.Name, TraceFile: tracePath}
+	if err != nil {
+		res.Outcome = "error"
+		res.Reason = err.Error()
+		if err := em(&trace.RunEnd{Base: trace.Base{RunID: runID, Scenario: sc.Name, Config: cfg.Name, Kind: trace.KindRunEnd}, Outcome: "error", Reason: err.Error(), Duration: dur}); err != nil {
+			return res, err
+		}
+		return res, nil
+	}
+
+	if err := em(&trace.AgentOutput{Base: trace.Base{RunID: runID, Scenario: sc.Name, Config: cfg.Name, Kind: trace.KindAgentOutput}, Text: out.Text}); err != nil {
+		return res, err
+	}
+	res.Outcome = "pass"
+	res.ToolCalls = len(sb.Records())
+	if err := em(&trace.RunEnd{Base: trace.Base{RunID: runID, Scenario: sc.Name, Config: cfg.Name, Kind: trace.KindRunEnd}, Outcome: "pass", Duration: dur}); err != nil {
+		return res, err
+	}
+	return res, nil
+}
+
+// effectiveConfigs returns the run matrix axis; when the suite declares no
+// configs, one implicit config is built from the suite defaults.
+func effectiveConfigs(suite *spec.EvalSuite) []spec.RunConfig {
+	if len(suite.Configs) > 0 {
+		return suite.Configs
+	}
+	return []spec.RunConfig{{
+		Name:   "default",
+		Agent:  suite.Defaults.Agent,
+		Judge:  suite.Defaults.Judge,
+		Budget: suite.Defaults.Budget,
+	}}
+}
+
+// runIDFor derives a filesystem-safe run id from scenario and config names.
+func runIDFor(scenario, config string) string {
+	san := func(s string) string {
+		s = strings.ToLower(s)
+		s = strings.Map(func(r rune) rune {
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+				return r
+			}
+			return '-'
+		}, s)
+		return strings.Trim(s, "-")
+	}
+	return san(scenario) + "__" + san(config)
+}

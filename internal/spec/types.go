@@ -19,6 +19,7 @@ const (
 
 // EvalSuite is the top-level evaluation definition: scenarios x configs x metrics.
 type EvalSuite struct {
+	Name      string      `yaml:"name"`
 	Version   string      `yaml:"version"`
 	Defaults  Defaults    `yaml:"defaults"`
 	Scenarios []Scenario  `yaml:"scenarios"`
