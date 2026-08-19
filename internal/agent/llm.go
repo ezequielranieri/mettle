@@ -49,6 +49,9 @@ func (a *LLM) Run(ctx context.Context, in runner.AgentInput, em runner.Emitter) 
 	if a.Client == nil {
 		return runner.AgentResult{}, fmt.Errorf("llm agent: client is required")
 	}
+	// JSON-instructive protocol (ADR-012): the model must answer in text,
+	// never with native tool calls.
+	a.Client.DisableTools = true
 	maxSteps := a.MaxSteps
 	if maxSteps <= 0 {
 		maxSteps = DefaultMaxSteps
@@ -58,6 +61,7 @@ func (a *LLM) Run(ctx context.Context, in runner.AgentInput, em runner.Emitter) 
 		{Role: "system", Content: buildSystemPrompt(in)},
 		{Role: "user", Content: buildUserPrompt(in)},
 	}
+	repaired := false // ADR-006: at most one bounded repair per run
 
 	for step := 0; step < maxSteps; step++ {
 		content, usage, err := a.Client.Chat(ctx, history, 0)
@@ -77,6 +81,17 @@ func (a *LLM) Run(ctx context.Context, in runner.AgentInput, em runner.Emitter) 
 
 		act, err := parseAction(content)
 		if err != nil {
+			if !repaired {
+				// One bounded repair, ADR-006: feed the error back and retry.
+				// Never guess the content — the malformed response stays in
+				// the trace as evidence.
+				repaired = true
+				history = append(history,
+					judge.Message{Role: "assistant", Content: content},
+					judge.Message{Role: "user", Content: "Your last response was not a valid JSON action. Return EXACTLY ONE JSON object, no other text:\n" + actionExamples},
+				)
+				continue
+			}
 			return runner.AgentResult{}, fmt.Errorf("llm agent step %d: %w", step, err)
 		}
 		history = append(history, judge.Message{Role: "assistant", Content: content})
@@ -159,11 +174,15 @@ func buildSystemPrompt(in runner.AgentInput) string {
 	return b.String()
 }
 
-const toolProtocol = `Respond with EXACTLY ONE JSON object per turn, no other text:
+const toolProtocol = `Respond with EXACTLY ONE JSON object per turn. No explanations. No markdown. No text before or after the JSON.
 {"action":"call_tool","tool":"<tool name>","args":{...},"tenant":"<tenant>","domain":"<domain>"}
 {"action":"decision","kind":"refusal|fallback|conflict_resolution|scope_check","rule":"...","outcome":"...","visible":true|false}
 {"action":"respond","text":"<final user-facing message>"}
 Use respond to stop when you have the answer. Never invent tool results.`
+
+const actionExamples = `{"action":"call_tool","tool":"lookup_record","args":{},"tenant":"acme","domain":"inventory"}
+{"action":"decision","kind":"scope_check","rule":"in-scope","outcome":"restricted","visible":true}
+{"action":"respond","text":"Record found."}`
 
 func buildUserPrompt(in runner.AgentInput) string {
 	input := "(none)"

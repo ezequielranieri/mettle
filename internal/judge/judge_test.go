@@ -132,6 +132,37 @@ func TestJudgeRejectsMissingModel(t *testing.T) {
 	}
 }
 
+func TestChatDisableToolsPayload(t *testing.T) {
+	srv := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req chatRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Errorf("unmarshal request: %v", err)
+		}
+		if req.Tools == nil {
+			t.Fatal("tools = nil, want empty array (native tool calling must be disabled)")
+		}
+		if len(*req.Tools) != 0 {
+			t.Errorf("tools = %v, want empty", *req.Tools)
+		}
+		if req.ToolChoice != "none" {
+			t.Errorf("tool_choice = %q, want none", req.ToolChoice)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"content": "ok"}}},
+		})
+	})
+	c := New(srv.URL, "", "m")
+	c.DisableTools = true
+	got, _, err := c.Chat(context.Background(), []Message{{Role: "user", Content: "hi"}}, 0)
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if got != "ok" {
+		t.Errorf("content = %q, want ok", got)
+	}
+}
+
 func TestBuilders(t *testing.T) {
 	t.Setenv("GROQ_API_KEY", "groq-key")
 	t.Setenv("GEMINI_API_KEY", "gemini-key")

@@ -189,6 +189,17 @@ devuelve UN objeto JSON estricto por turno: `call_tool` | `decision` |
   run, no quema tokens infinitos.
 - El sistema prompt del agente incluye el ground truth del escenario (scope
   declarado, visibilidad, empty states) — datos de evaluación, nunca secretos.
+- **Reparación acotada (validado en vivo):** una respuesta no-JSON se corrige
+  UNA vez devolviendo el error al modelo; la segunda malformada falla el run.
+  Nunca se adivina el contenido — la respuesta malformada queda en el trace
+  como evidencia.
+- **Modo texto forzado:** el cliente envía `tools: []` + `tool_choice: none`.
+  Algunos modelos (p. ej. gpt-oss) emiten function-calling nativo aunque el
+  prompt pida JSON en texto, y los proveedores lo rechazan con "Tool choice is
+  none, but model called a tool".
+- **Errores de proveedor honestos:** Gemini devuelve errores como array JSON
+  `[{"error":{...}}]`; el cliente lo detecta y expone el mensaje en lugar de
+  un unmarshal opaco.
 
 ---
 

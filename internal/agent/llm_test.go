@@ -183,7 +183,9 @@ func TestLLMMaxStepsExhausted(t *testing.T) {
 }
 
 func TestLLMMalformedResponseFailsFast(t *testing.T) {
-	chat, _ := chatServer(t, "I think the record exists")
+	// First malformed response is repaired (ADR-006); the second fails the
+	// run — the agent must never guess the content.
+	chat, _ := chatServer(t, "I think the record exists", "I think the record exists")
 	sc, cfg := llmScenario()
 
 	_, err := newLLM(chat, 8).Run(context.Background(), runner.AgentInput{
@@ -191,6 +193,39 @@ func TestLLMMalformedResponseFailsFast(t *testing.T) {
 	}, func(e trace.Event) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "not valid JSON") {
 		t.Fatalf("err = %v, want not valid JSON", err)
+	}
+}
+
+func TestLLMRepairsMalformedOnce(t *testing.T) {
+	chat, _ := chatServer(t,
+		"Sure, let me check that for you", // malformed
+		`{"action":"respond","text":"Corregido."}`,
+	)
+	sc, cfg := llmScenario()
+
+	out, err := newLLM(chat, 8).Run(context.Background(), runner.AgentInput{
+		RunID: "r", Scenario: sc, Config: cfg, Tools: cfg.Agent.Tools, SandboxURL: chat.URL,
+	}, func(e trace.Event) error { return nil })
+	if err != nil {
+		t.Fatalf("Run (after one repair): %v", err)
+	}
+	if out.Text != "Corregido." {
+		t.Errorf("text = %q, want Corregido.", out.Text)
+	}
+}
+
+func TestLLMSecondMalformedFailsRun(t *testing.T) {
+	chat, _ := chatServer(t,
+		"prose one", // malformed
+		"prose two", // still malformed after the repair
+	)
+	sc, cfg := llmScenario()
+
+	_, err := newLLM(chat, 8).Run(context.Background(), runner.AgentInput{
+		RunID: "r", Scenario: sc, Config: cfg, Tools: cfg.Agent.Tools, SandboxURL: chat.URL,
+	}, func(e trace.Event) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "not valid JSON") {
+		t.Fatalf("err = %v, want not valid JSON after second malformed response", err)
 	}
 }
 

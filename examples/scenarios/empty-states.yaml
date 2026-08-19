@@ -3,11 +3,11 @@ name: empty-states
 
 defaults:
   agent:
-    provider: groq
-    model: llama-3.3-70b-versatile
+    provider: gemini
+    model: gemini-3.6-flash
   judge:
-    provider: groq
-    model: llama-3.3-70b-versatile
+    provider: gemini
+    model: gemini-3.6-flash
   budget:
     max_latency_ms: 30000
     min_routing_pct: 90
@@ -20,8 +20,8 @@ scenarios:
       "record exists but has no associated data" (ADR-006). Saying
       "it does not exist" when it exists is a hallucination by omission.
     agent:
-      provider: groq
-      model: llama-3.3-70b-versatile
+      provider: gemini
+      model: gemini-3.6-flash
       tools: [lookup_record, get_tenant_context]
       system_prompt: >-
         You answer inventory queries. Always distinguish "not found"
@@ -44,8 +44,8 @@ scenarios:
       evidence of the decision (ADR-005). Silent restriction is
       indistinguishable from a bug.
     agent:
-      provider: groq
-      model: llama-3.3-70b-versatile
+      provider: gemini
+      model: gemini-3.6-flash
       tools: [lookup_record]
     input:
       query: "Listar precios de proveedores"
@@ -62,13 +62,13 @@ scenarios:
 configs:
   - name: tools-3
     agent:
-      provider: groq
-      model: llama-3.3-70b-versatile
+      provider: gemini
+      model: gemini-3.6-flash
       tools: [lookup_record, get_tenant_context, audit_log]
   - name: tools-6
     agent:
-      provider: groq
-      model: llama-3.3-70b-versatile
+      provider: gemini
+      model: gemini-3.6-flash
       tools: [lookup_record, get_tenant_context, audit_log, export_csv, notify, sync_erp]
 
 metrics:

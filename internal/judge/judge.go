@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -34,6 +35,12 @@ type Client struct {
 	APIKey  string
 	Model   string
 	HTTP    *http.Client
+
+	// DisableTools requests text-only completions (tools: [], tool_choice:
+	// none). Required for the JSON-instructive agent protocol (ADR-012):
+	// some models otherwise emit native tool calls that providers reject
+	// with "Tool choice is none, but model called a tool".
+	DisableTools bool
 }
 
 // New creates a client for an arbitrary OpenAI-compatible endpoint.
@@ -93,7 +100,13 @@ func (c *Client) Chat(ctx context.Context, messages []Message, temperature float
 		return "", zero, fmt.Errorf("judge: model is required (pinned per run, ADR-008)")
 	}
 
-	payload, err := json.Marshal(chatRequest{Model: c.Model, Messages: messages, Temperature: temperature})
+	req := chatRequest{Model: c.Model, Messages: messages, Temperature: temperature}
+	if c.DisableTools {
+		empty := []string{}
+		req.Tools = &empty
+		req.ToolChoice = "none"
+	}
+	payload, err := json.Marshal(req)
 	if err != nil {
 		return "", zero, fmt.Errorf("judge: marshal request: %w", err)
 	}
@@ -113,8 +126,24 @@ func (c *Client) Chat(ctx context.Context, messages []Message, temperature float
 	}
 	defer resp.Body.Close()
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", zero, fmt.Errorf("judge: read response: %w", err)
+	}
+
+	// Gemini's OpenAI-compat endpoint returns errors as a JSON array like
+	// [{"error":{...}}] instead of the object shape; surface the message
+	// instead of failing with an opaque unmarshal error.
 	var chat chatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&chat); err != nil {
+	if err := json.Unmarshal(body, &chat); err != nil {
+		var gemErr []struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(body, &gemErr) == nil && len(gemErr) > 0 && gemErr[0].Error.Message != "" {
+			return "", zero, fmt.Errorf("judge: provider error: %s", gemErr[0].Error.Message)
+		}
 		return "", zero, fmt.Errorf("judge: decode response: %w", err)
 	}
 	if chat.Error != nil {
@@ -131,8 +160,10 @@ func (c *Client) Chat(ctx context.Context, messages []Message, temperature float
 }
 
 // Judge runs one semantic judgment and parses the structured verdict.
+// Judging is always text-only (no native tools).
 func (c *Client) Judge(ctx context.Context, req Request) (Verdict, error) {
 	var zero Verdict
+	c.DisableTools = true
 
 	content, _, err := c.Chat(ctx, []Message{
 		{Role: "system", Content: systemPrompt},
@@ -183,6 +214,8 @@ type chatRequest struct {
 	Model       string    `json:"model"`
 	Messages    []Message `json:"messages"`
 	Temperature float64   `json:"temperature"`
+	Tools       *[]string `json:"tools,omitempty"`    // non-nil empty disables native tool calling
+	ToolChoice  string    `json:"tool_choice,omitempty"`
 }
 
 type chatResponse struct {

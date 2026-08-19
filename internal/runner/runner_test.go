@@ -149,7 +149,7 @@ func TestRunSuiteExecutesMatrixAndWritesTraces(t *testing.T) {
 		}
 	}
 	rs := events[0].(*trace.RunStart)
-	if rs.Judge != "groq/llama-3.3-70b-versatile" {
+	if rs.Judge != "gemini/gemini-3.6-flash" {
 		t.Errorf("judge = %q, want defaults fallback", rs.Judge)
 	}
 }
