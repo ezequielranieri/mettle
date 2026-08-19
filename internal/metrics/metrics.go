@@ -34,6 +34,7 @@ type Result struct {
 	RunID              string    `json:"run_id"`
 	Scenario           string    `json:"scenario"`
 	Config             string    `json:"config"`
+	Outcome            string    `json:"outcome"` // pass | error (from run_end)
 	Pass               bool      `json:"pass"`
 	LatencyMS          int64     `json:"latency_ms"`
 	InputTokens        int       `json:"input_tokens"`
@@ -107,6 +108,7 @@ func Compute(in Input) (Result, error) {
 	}
 
 	res.LatencyMS = runEnd.Duration.Milliseconds()
+	res.Outcome = runEnd.Outcome
 	res.EstCostUSD = estimateCost(res.InputTokens, res.OutputTokens, modelForRate)
 	if res.ToolCalls > 0 {
 		res.RoutingPct = float64(res.ToolCalls-res.OutOfScopeCalls) / float64(res.ToolCalls) * 100

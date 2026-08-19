@@ -20,7 +20,7 @@ Early development.
 - [x] Eval runner
 - [x] Judge client (Groq / Gemini / Ollama)
 - [x] Metrics with budgets
-- [ ] Regression store (SQLite)
+- [x] Regression store (SQLite)
 - [ ] Reports (markdown/HTML)
 - [ ] CLI + CI gate
 
