@@ -10,6 +10,8 @@ bin/
 *.db-shm
 traces/
 reports/
+report.md
+report.html
 
 # Editor
 .idea/
