@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 
 	"mettle/internal/agent"
+	"mettle/internal/judge"
 	"mettle/internal/metrics"
 	"mettle/internal/report"
 	"mettle/internal/runner"
@@ -63,17 +64,25 @@ func cmdRun(args []string) error {
 	tracesDir := fs.String("traces", defaultTraces, "directory for run traces")
 	reportPath := fs.String("report", defaultReport, "markdown report output")
 	htmlPath := fs.String("html", "", "optional HTML report output")
+	agentKind := fs.String("agent", "demo", "agent under test: demo (deterministic, CI) | llm (chat endpoint, needs API keys)")
+	provider := fs.String("provider", "", "provider for --agent llm: groq | gemini | ollama (default: spec defaults)")
+	model := fs.String("model", "", "model for --agent llm (default: spec defaults)")
+	maxSteps := fs.Int("max-steps", agent.DefaultMaxSteps, "max LLM steps per run (--agent llm)")
 	_ = fs.Parse(args)
 	if *specPath == "" {
 		return fmt.Errorf("--spec is required")
 	}
-	return runPipeline(*specPath, *storePath, *tracesDir, *reportPath, *htmlPath)
+	return runPipeline(*specPath, *storePath, *tracesDir, *reportPath, *htmlPath, *agentKind, *provider, *model, *maxSteps)
 }
 
 // runPipeline executes the evaluation matrix and enforces the CI gate.
 // It is a separate function so the end-to-end flow is testable.
-func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath string) error {
+func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind, provider, model string, maxSteps int) error {
 	suite, err := spec.LoadSuite(specPath)
+	if err != nil {
+		return err
+	}
+	ag, err := buildAgent(agentKind, provider, model, maxSteps, suite)
 	if err != nil {
 		return err
 	}
@@ -88,7 +97,7 @@ func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath string) er
 	defer st.Close()
 
 	ctx := context.Background()
-	r := &runner.Runner{Agent: agent.Demo{}, TraceDir: tracesDir}
+	r := &runner.Runner{Agent: ag, TraceDir: tracesDir}
 	results, err := r.RunSuite(ctx, suite)
 	if err != nil {
 		return err
@@ -225,6 +234,45 @@ func cmdReport(args []string) error {
 		}
 	}
 	return nil
+}
+
+// buildAgent constructs the agent under test. demo is deterministic (CI
+// gate, no keys); llm is the real chat agent (ADR-012) and defaults its
+// provider/model from the suite spec.
+func buildAgent(kind, provider, model string, maxSteps int, suite *spec.EvalSuite) (runner.Agent, error) {
+	switch kind {
+	case "demo":
+		return agent.Demo{}, nil
+	case "llm":
+		if provider == "" {
+			provider = suite.Defaults.Agent.Provider
+		}
+		if model == "" {
+			model = suite.Defaults.Agent.Model
+		}
+		c, err := buildLLMClient(provider, model)
+		if err != nil {
+			return nil, err
+		}
+		return &agent.LLM{Client: c, MaxSteps: maxSteps}, nil
+	default:
+		return nil, fmt.Errorf("unknown agent %q (demo|llm)", kind)
+	}
+}
+
+func buildLLMClient(provider, model string) (*judge.Client, error) {
+	switch provider {
+	case "groq":
+		return judge.NewGroq(model), nil
+	case "gemini":
+		return judge.NewGemini(model), nil
+	case "ollama":
+		return judge.NewOllama(model), nil
+	case "":
+		return nil, fmt.Errorf("--agent llm requires a provider (groq|gemini|ollama) in the spec or --provider")
+	default:
+		return nil, fmt.Errorf("unknown provider %q", provider)
+	}
 }
 
 // judgeLabel mirrors the runner's pinning logic for the store meta.

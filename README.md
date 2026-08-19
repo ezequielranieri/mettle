@@ -23,6 +23,7 @@ Early development.
 - [x] Regression store (SQLite)
 - [x] Reports (markdown/HTML)
 - [x] CLI + CI gate
+- [x] Real LLM agent loop (`--agent llm`, JSON-instructive tool calls)
 
 ## Quick start
 

@@ -71,28 +71,36 @@ type Verdict struct {
 	Findings []string `json:"findings"`
 }
 
-// Judge runs one semantic judgment and parses the structured verdict.
-func (c *Client) Judge(ctx context.Context, req Request) (Verdict, error) {
-	var zero Verdict
+// Message is one chat message in the OpenAI-compatible protocol.
+type Message struct {
+	Role    string `json:"role"` // system | user | assistant
+	Content string `json:"content"`
+}
+
+// Usage is the token accounting from a chat completion.
+type Usage struct {
+	InputTokens  int
+	OutputTokens int
+}
+
+// Chat performs one chat completion and returns the assistant content plus
+// token usage. It is the shared OpenAI-compatible transport: Judge builds on
+// it, and the agent under test uses it for its tool-calling loop (ADR-012).
+// The model is pinned on the client (ADR-008).
+func (c *Client) Chat(ctx context.Context, messages []Message, temperature float64) (string, Usage, error) {
+	var zero Usage
 	if c.Model == "" {
-		return zero, fmt.Errorf("judge: model is required (pinned per run, ADR-008)")
+		return "", zero, fmt.Errorf("judge: model is required (pinned per run, ADR-008)")
 	}
 
-	payload, err := json.Marshal(chatRequest{
-		Model: c.Model,
-		Messages: []chatMessage{
-			{Role: "system", Content: systemPrompt},
-			{Role: "user", Content: buildPrompt(req)},
-		},
-		Temperature: 0,
-	})
+	payload, err := json.Marshal(chatRequest{Model: c.Model, Messages: messages, Temperature: temperature})
 	if err != nil {
-		return zero, fmt.Errorf("judge: marshal request: %w", err)
+		return "", zero, fmt.Errorf("judge: marshal request: %w", err)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/chat/completions", bytes.NewReader(payload))
 	if err != nil {
-		return zero, fmt.Errorf("judge: build request: %w", err)
+		return "", zero, fmt.Errorf("judge: build request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	if c.APIKey != "" {
@@ -101,22 +109,40 @@ func (c *Client) Judge(ctx context.Context, req Request) (Verdict, error) {
 
 	resp, err := c.HTTP.Do(httpReq)
 	if err != nil {
-		return zero, fmt.Errorf("judge: call %s: %w", c.BaseURL, err)
+		return "", zero, fmt.Errorf("judge: call %s: %w", c.BaseURL, err)
 	}
 	defer resp.Body.Close()
 
 	var chat chatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&chat); err != nil {
-		return zero, fmt.Errorf("judge: decode response: %w", err)
+		return "", zero, fmt.Errorf("judge: decode response: %w", err)
 	}
 	if chat.Error != nil {
-		return zero, fmt.Errorf("judge: provider error: %s", chat.Error.Message)
+		return "", zero, fmt.Errorf("judge: provider error: %s", chat.Error.Message)
 	}
 	if len(chat.Choices) == 0 {
-		return zero, fmt.Errorf("judge: empty choices")
+		return "", zero, fmt.Errorf("judge: empty choices")
 	}
 
-	raw, err := extractJSON(chat.Choices[0].Message.Content)
+	return chat.Choices[0].Message.Content, Usage{
+		InputTokens:  chat.Usage.PromptTokens,
+		OutputTokens: chat.Usage.CompletionTokens,
+	}, nil
+}
+
+// Judge runs one semantic judgment and parses the structured verdict.
+func (c *Client) Judge(ctx context.Context, req Request) (Verdict, error) {
+	var zero Verdict
+
+	content, _, err := c.Chat(ctx, []Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: buildPrompt(req)},
+	}, 0)
+	if err != nil {
+		return zero, err
+	}
+
+	raw, err := ExtractJSON(content)
 	if err != nil {
 		return zero, err
 	}
@@ -154,14 +180,9 @@ Return ONLY JSON: {"verdict":"pass|fail|warning","severity":"critical|warning|in
 }
 
 type chatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []chatMessage `json:"messages"`
-	Temperature float64       `json:"temperature"`
-}
-
-type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Model       string    `json:"model"`
+	Messages    []Message `json:"messages"`
+	Temperature float64   `json:"temperature"`
 }
 
 type chatResponse struct {
@@ -173,11 +194,15 @@ type chatResponse struct {
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+	} `json:"usage"`
 }
 
-// extractJSON trims optional code fences and rejects non-JSON. It never
-// guesses: a malformed judge response is an error (ADR-006 fail-fast).
-func extractJSON(s string) ([]byte, error) {
+// ExtractJSON trims optional code fences and rejects non-JSON. It never
+// guesses: a malformed response is an error (ADR-006 fail-fast).
+func ExtractJSON(s string) ([]byte, error) {
 	s = strings.TrimSpace(s)
 	if strings.HasPrefix(s, "```") {
 		lines := strings.Split(s, "\n")

@@ -166,6 +166,30 @@ post de seguimiento se escribe con datos, no con narrativa ("lo arreglamos").
 features convalidados para el roadmap — existencia-validation-before-query y
 resolución explícita de conflictos — antes de escribir una línea de código.
 
+## ADR-012 — Protocolo de tool calls del agente (JSON instructivo)
+
+**Decisión:** el agente LLM bajo prueba usa **JSON instructivo** (el modelo
+devuelve UN objeto JSON estricto por turno: `call_tool` | `decision` |
+`respond`), no function-calling nativo de la API.
+
+**Por qué:**
+- Portabilidad máxima entre los proveedores confirmados (Groq / Gemini /
+  Ollama): function-calling tiene formas de respuesta que varían por proveedor;
+  JSON en texto es idéntico en los tres.
+- Consistencia con el judge client: mismo patrón "system prompt → JSON
+  estricto → parse fail-fast" (ADR-006). Nunca se adivina una acción malformada.
+- El protocolo es un carrier, no el producto: lo que se evalúa es el
+  comportamiento (scope, visibilidad, empty states), no el transporte.
+
+**Reglas:**
+- `decision` es una acción intermedia (no terminal): el loop sigue hasta
+  `respond`. El campo `visible` ausente = silencioso (lo juzga el oracle,
+  ADR-005), nunca un error de protocolo.
+- `MaxSteps` (default 8) acota el run: un modelo que nunca responde falla el
+  run, no quema tokens infinitos.
+- El sistema prompt del agente incluye el ground truth del escenario (scope
+  declarado, visibilidad, empty states) — datos de evaluación, nunca secretos.
+
 ---
 
 ## Costos
