@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Tests
+        run: go test ./...
+
+      - name: Eval gate (deterministic, no API keys)
+        run: |
+          go run ./cmd/mettle run \
+            --spec examples/scenarios/empty-states.yaml \
+            --store /tmp/ci-eval.db \
+            --traces /tmp/ci-traces \
+            --report /tmp/ci-report.md

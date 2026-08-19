@@ -163,6 +163,48 @@ func (s *Store) LatestRun(ctx context.Context, scenario, config string) (*Run, e
 	return &rows[0], nil
 }
 
+// ListRuns returns persisted runs for a suite (all suites when suite is
+// empty), most recent first.
+func (s *Store) ListRuns(ctx context.Context, suite string) ([]Run, error) {
+	if suite != "" {
+		return s.queryRuns(ctx, `WHERE suite = ? ORDER BY created_at DESC, rowid DESC`, suite)
+	}
+	return s.queryRuns(ctx, `ORDER BY created_at DESC, rowid DESC`)
+}
+
+// CompareSuite compares the two most recent runs of every scenario x config
+// pair present in the store (optionally filtered by suite).
+func (s *Store) CompareSuite(ctx context.Context, suite string) ([]Regression, error) {
+	q := `SELECT DISTINCT scenario, config FROM runs`
+	var args []any
+	if suite != "" {
+		q += ` WHERE suite = ?`
+		args = append(args, suite)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query pairs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Regression
+	for rows.Next() {
+		var sc, cfg string
+		if err := rows.Scan(&sc, &cfg); err != nil {
+			return nil, fmt.Errorf("scan pair: %w", err)
+		}
+		reg, err := s.Compare(ctx, sc, cfg)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, reg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("query pairs: %w", err)
+	}
+	return out, nil
+}
+
 // Regression is the verdict between the two most recent runs of a
 // scenario x config pair.
 type Regression struct {
@@ -217,7 +259,9 @@ func (s *Store) Compare(ctx context.Context, scenario, config string) (Regressio
 		reg.IsRegression = true
 		reg.Reasons = append(reg.Reasons, fmt.Sprintf("routing accuracy dropped %.1f%% -> %.1f%%", prev.RoutingPct, latest.RoutingPct))
 	}
-	if prev.LatencyMS > 0 && latest.LatencyMS > prev.LatencyMS*120/100 {
+	// Latency regression needs a meaningful baseline: sub-second runs are
+	// noise in CI (1ms vs 7ms is scheduler jitter, not a regression).
+	if prev.LatencyMS >= 100 && latest.LatencyMS > prev.LatencyMS*120/100 {
 		reg.IsRegression = true
 		reg.Reasons = append(reg.Reasons, fmt.Sprintf("latency increased %dms -> %dms", prev.LatencyMS, latest.LatencyMS))
 	}

@@ -22,10 +22,22 @@ Early development.
 - [x] Metrics with budgets
 - [x] Regression store (SQLite)
 - [x] Reports (markdown/HTML)
-- [ ] CLI + CI gate
+- [x] CLI + CI gate
 
 ## Quick start
 
 ```sh
 go test ./...
 ```
+
+Run the example suite (deterministic agent, no API keys required):
+
+```sh
+go run ./cmd/mettle run --spec examples/scenarios/empty-states.yaml
+```
+
+The CLI executes the scenario x config matrix, computes metrics from the
+traces, persists runs to the SQLite regression store and enforces the CI
+gate: exit 1 on critical findings or regressions. The report renders to
+`report.md` (add `--html report.html` for a shareable page) and the trace
+directory keeps one append-only JSONL file per run.

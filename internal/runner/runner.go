@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -77,7 +78,7 @@ func (r *Runner) RunSuite(ctx context.Context, suite *spec.EvalSuite) ([]Result,
 
 // RunOne executes a single scenario x config and writes its trace.
 func (r *Runner) RunOne(ctx context.Context, suite *spec.EvalSuite, sc spec.Scenario, cfg spec.RunConfig) (Result, error) {
-	runID := runIDFor(sc.Name, cfg.Name)
+	runID := runIDFor(sc.Name, cfg.Name, time.Now().UnixNano())
 	tracePath := filepath.Join(r.TraceDir, runID+".jsonl")
 	w, err := trace.NewWriter(tracePath)
 	if err != nil {
@@ -187,8 +188,11 @@ func effectiveConfigs(suite *spec.EvalSuite) []spec.RunConfig {
 	}}
 }
 
-// runIDFor derives a filesystem-safe run id from scenario and config names.
-func runIDFor(scenario, config string) string {
+// runIDFor derives a filesystem-safe, unique run id from scenario and
+// config names plus a per-execution component. Uniqueness is required by
+// ADR-008 (each run is a versioned artifact): a stable id would overwrite
+// previous runs in the regression store and pollute append-only traces.
+func runIDFor(scenario, config string, unique int64) string {
 	san := func(s string) string {
 		s = strings.ToLower(s)
 		s = strings.Map(func(r rune) rune {
@@ -199,5 +203,5 @@ func runIDFor(scenario, config string) string {
 		}, s)
 		return strings.Trim(s, "-")
 	}
-	return san(scenario) + "__" + san(config)
+	return san(scenario) + "__" + san(config) + "__" + strconv.FormatInt(unique, 10)
 }

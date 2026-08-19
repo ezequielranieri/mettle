@@ -45,7 +45,12 @@ type data struct {
 }
 
 func summarize(suite string, runs []store.Run, regs []store.Regression) data {
-	d := data{Suite: suite, Generated: time.Now().UTC().Format(time.RFC3339), Regressions: regs}
+	d := data{Suite: suite, Generated: time.Now().UTC().Format(time.RFC3339)}
+	for _, r := range regs {
+		if r.Compared && r.IsRegression {
+			d.Regressions = append(d.Regressions, r)
+		}
+	}
 	for _, r := range runs {
 		d.Runs = append(d.Runs, runRow{
 			Scenario: r.Scenario, Config: r.Config, Outcome: r.Outcome, Pass: r.Pass,
@@ -82,18 +87,9 @@ func Markdown(suite string, runs []store.Run, regs []store.Regression) string {
 	fmt.Fprintf(&b, "- Regressions: %d\n", len(d.Regressions))
 	fmt.Fprintf(&b, "- Total cost: $%.4f\n\n", d.TotalCost)
 
-	active := 0
-	for _, r := range d.Regressions {
-		if r.Compared && r.IsRegression {
-			active++
-		}
-	}
-	if active > 0 {
+	if len(d.Regressions) > 0 {
 		fmt.Fprintf(&b, "## Regressions\n\n")
 		for _, r := range d.Regressions {
-			if !r.Compared || !r.IsRegression {
-				continue
-			}
 			fmt.Fprintf(&b, "### %s / %s\n\n", r.Scenario, r.Config)
 			for _, reason := range r.Reasons {
 				fmt.Fprintf(&b, "- %s\n", reason)
@@ -154,11 +150,11 @@ code { background: #f2f2f2; padding: 0 .25rem; border-radius: 3px; }
 </ul>
 {{if .Regressions}}
 <h2>Regressions</h2>
-{{range .Regressions}}{{if .IsRegression}}
+{{range .Regressions}}
 <div class="regression"><strong>{{.Scenario}} / {{.Config}}</strong>
 <ul>{{range .Reasons}}<li>{{.}}</li>{{end}}</ul>
 </div>
-{{end}}{{end}}
+{{end}}
 {{end}}
 <h2>Runs</h2>
 <table>
