@@ -15,7 +15,7 @@ See [DECISIONS.md](DECISIONS.md) for the full architecture decision record
 Early development.
 
 - [x] Project skeleton + spec model (slice 1)
-- [ ] Trace model (JSONL)
+- [x] Trace model (JSONL)
 - [ ] Tool sandbox / proxy
 - [ ] Eval runner
 - [ ] Judge client (Groq / Gemini / Ollama)
