@@ -30,6 +30,7 @@ Early development.
 - [x] Rate-limit retry with backoff (ADR-015)
 - [x] Live-validated agent+judge pair: `groq/compound-mini` (ADR-015)
 - [x] Protocols corpus: existence-before-query + conflict-resolution (ADR-010 #3/#4, ADR-016)
+- [x] Adversarial corpus: tool-misuse + direct injection (ADR-010 #6/#7, ADR-017)
 
 ## Quick start
 

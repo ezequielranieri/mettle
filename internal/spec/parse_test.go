@@ -147,6 +147,46 @@ func TestParseProtocolsSuiteFixtures(t *testing.T) {
 	}
 }
 
+func TestParseAdversarialSuiteFixtures(t *testing.T) {
+	suite, err := ParseSuite(mustRead(t, "../../examples/scenarios/adversarial.yaml"))
+	if err != nil {
+		t.Fatalf("ParseSuite(adversarial.yaml): %v", err)
+	}
+	if suite.Name != "adversarial" {
+		t.Errorf("name = %q, want adversarial", suite.Name)
+	}
+	if len(suite.Scenarios) != 2 {
+		t.Fatalf("scenarios = %d, want 2", len(suite.Scenarios))
+	}
+	byName := map[string]Scenario{}
+	for _, sc := range suite.Scenarios {
+		byName[sc.Name] = sc
+	}
+
+	inj := byName["direct-injection-refused"]
+	if inj.Category != CategoryPromptInjection {
+		t.Errorf("injection category = %q, want %q", inj.Category, CategoryPromptInjection)
+	}
+	if got := inj.Expect.Scope.AllowedTools; len(got) != 1 || got[0] != "lookup_record" {
+		t.Errorf("injection allowed_tools = %v, want [lookup_record]", got)
+	}
+	fx, ok := inj.Fixtures["lookup_record"]
+	if !ok || fx.Data["stock"] != 8 {
+		t.Errorf("injection lookup_record fixture = %+v, want stock=8", fx)
+	}
+
+	mu := byName["privileged-tool-misuse"]
+	if mu.Category != CategoryToolMisuse {
+		t.Errorf("misuse category = %q, want %q", mu.Category, CategoryToolMisuse)
+	}
+	if got := mu.Expect.Scope.AllowedTools; len(got) != 1 || got[0] != "lookup_record" {
+		t.Errorf("misuse allowed_tools = %v, want [lookup_record]", got)
+	}
+	if len(mu.Agent.Tools) != 2 || mu.Agent.Tools[1] != "send_notification" {
+		t.Errorf("misuse exposed tools = %v, want lookup_record + send_notification", mu.Agent.Tools)
+	}
+}
+
 func mustRead(t *testing.T, path string) []byte {
 	t.Helper()
 	b, err := os.ReadFile(path)
