@@ -402,6 +402,53 @@ direct-injection. OpenRouter free: 50 req/día, 20 RPM, catálogo `:free` rota
 
 ---
 
+## ADR-019 — Calibración formal del judge (golden set + matriz de confusión)
+
+**Decisión:** cerrar el requisito pendiente de ADR-008 (calibrar el judge
+contra un golden set) con un comando nativo `mettle calibrate` + un archivo
+de ground truth `examples/golden/calibration.yaml`. El golden se autoró run
+por run (veredicto humano leyendo trazas y reports) sobre 7 corridas nuevas
+con el binario corregido — 2 judges, 3 buckets (compound-mini agente+judge,
+compound-mini agente+nemotron judge, nemotron agente+judge), 1 control.
+
+**Resultado (matriz de confusión, positivo = detectar defecto):**
+
+| Judge | TP | FP | TN | FN | agreement | precision | recall | F1 | n |
+|---|---|---|---|---|---|---|---|---|---|
+| groq/compound-mini | 1 | 0 | 1 | 0 | 1.000 | 1.000 | 1.000 | 1.000 | 2 |
+| openrouter/nemotron-120b | 2 | 0 | 3 | 0 | 1.000 | 1.000 | 1.000 | 1.000 | 5 |
+| **agregado** | **3** | **0** | **4** | **0** | **1.000** | **1.000** | **1.000** | **1.000** | **7** |
+
+**Hallazgos (honestidad sobre el alcance):**
+
+1. **BUG REAL ENCONTRADO: el pin del judge mentía.** El label persistido
+   (`store.Run.Judge`) se derivaba de `judgeLabel(suite, cfg)` que solo
+   espejaba escenario→defaults — las overrides CLI (`--judge-provider/--judge-model`)
+   no entraban al label. TODAS las corridas comparadas (ADR-015..018) quedaron
+   etiquetadas `gemini/gemini-3.6-flash` cuando el judge real era
+   compound-mini o nemotron. Los veredictos eran correctos (el cliente sí
+   usaba las overrides), pero el registro persistido violaba ADR-008. Fix:
+   `effectiveJudge()` como única fuente de verdad — el mismo valor construye
+   el cliente y etiqueta el run. Test `TestEffectiveJudgePinsCLIOverrides`
+   fija la invariante.
+2. **Estocasticidad del judge, medida por segunda vez.** nemotron-judge dio
+   FAIL a una supresión de respuesta legítima (cb1) que una corrida previa
+   del mismo patrón había aprobado (PASS). Un judge LLM no es una función
+   determinística: la calibración con n pequeño es una foto, no una ley.
+3. **Responsabilidades por capa confirmadas.** En cc1 (nemotron agente) el
+   ORÁCULO de scope cazó la llamada no autorizada a `audit_log`
+   (out_of_scope_call, routing 0%) que el judge registró solo como info. La
+   defensa en capas (métricas determinísticas + judge semántico) se
+   complementan: el oráculo no perdona lo que un judge laxo puede dejar pasar.
+4. **El golden es un snapshot, no una matriz CI-replayable**: los run_id
+   llevan timestamps del entorno. La próxima calibración re-autora el golden
+   contra corridas nuevas (el comando `calibrate` en modo lista ayuda).
+
+**Comando:** `mettle calibrate --golden examples/golden/calibration.yaml --store <db>...`
+— modo lista (sin `--golden`) para autorar; exit 1 si faltan runs del golden.
+
+---
+
 ## Costos
 
 - **Stack: 100% open source y gratuito.** Go, SQLite, librerías, GitHub (repo +

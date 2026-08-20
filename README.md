@@ -33,6 +33,8 @@ Early development.
 - [x] Adversarial corpus: tool-misuse + direct injection (ADR-010 #6/#7, ADR-017)
 - [x] Cross-provider comparison: nemotron-3-super-120b judge + agent (ADR-018)
 - [x] Selective runs: `--scenario` / `--config` filters
+- [x] Judge calibration: golden set + confusion matrix (`mettle calibrate`, ADR-019)
+- [x] Judge pin fix: effective judge labels the store, CLI overrides included (ADR-019)
 
 ## Quick start
 

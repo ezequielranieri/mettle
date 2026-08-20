@@ -5,6 +5,7 @@
 //
 //	mettle run --spec <file.yaml> [--store eval.db] [--traces traces] [--report report.md] [--html report.html]
 //	mettle report [--store eval.db] [--suite NAME] [--report report.md] [--html report.html]
+//	mettle calibrate [--store path]... [--golden path]
 package main
 
 import (
@@ -41,6 +42,8 @@ func main() {
 		err = cmdRun(os.Args[2:])
 	case "report":
 		err = cmdReport(os.Args[2:])
+	case "calibrate":
+		err = cmdCalibrate(os.Args[2:])
 	default:
 		usage()
 		os.Exit(2)
@@ -52,11 +55,12 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: mettle <run|report> [flags]")
-	fmt.Fprintln(os.Stderr, "  run    --spec <file.yaml> [--store path] [--traces dir] [--report path] [--html path]")
-	fmt.Fprintln(os.Stderr, "         [--agent demo|llm] [--provider p] [--model m] [--judge-provider p] [--judge-model m]")
-	fmt.Fprintln(os.Stderr, "         [--scenario name] [--config name] [--max-steps n]")
-	fmt.Fprintln(os.Stderr, "  report [--store path] [--suite name] [--report path] [--html path]")
+	fmt.Fprintln(os.Stderr, "usage: mettle <run|report|calibrate> [flags]")
+	fmt.Fprintln(os.Stderr, "  run       --spec <file.yaml> [--store path] [--traces dir] [--report path] [--html path]")
+	fmt.Fprintln(os.Stderr, "            [--agent demo|llm] [--provider p] [--model m] [--judge-provider p] [--judge-model m]")
+	fmt.Fprintln(os.Stderr, "            [--scenario name] [--config name] [--max-steps n]")
+	fmt.Fprintln(os.Stderr, "  report    [--store path] [--suite name] [--report path] [--html path]")
+	fmt.Fprintln(os.Stderr, "  calibrate [--store path]... [--golden path]")
 }
 
 func cmdRun(args []string) error {
@@ -174,22 +178,14 @@ func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind
 		if err != nil {
 			return err
 		}
-		if agentKind == "llm" && mres.Outcome == "pass" && semantic == nil {
-			judgeCfg := cfg.Judge
-			if judgeCfg.Provider == "" {
-				judgeCfg = suite.Defaults.Judge
-			}
-			if judgeProvider != "" {
-				judgeCfg.Provider = judgeProvider
-			}
-			if judgeModel != "" {
-				judgeCfg.Model = judgeModel
-			}
-			if judgeCfg.Provider != "" {
-				semantic, err = buildLLMClient(judgeCfg.Provider, judgeCfg.Model)
-				if err != nil {
-					return err
-				}
+		// The effective judge is a single source of truth: it both labels the
+		// persisted run (ADR-008 pin) and builds the semantic client, so the
+		// store pin always matches the judge that produced the verdict.
+		judgeCfg := effectiveJudge(cfg, suite, judgeProvider, judgeModel)
+		if agentKind == "llm" && mres.Outcome == "pass" && semantic == nil && judgeCfg.Provider != "" {
+			semantic, err = buildLLMClient(judgeCfg.Provider, judgeCfg.Model)
+			if err != nil {
+				return err
 			}
 		}
 		if semantic != nil && mres.Outcome == "pass" {
@@ -201,7 +197,7 @@ func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind
 		if mres.Outcome != "pass" || !mres.Pass {
 			failedRuns++
 		}
-		meta := store.Meta{Suite: suite.Name, Judge: judgeLabel(suite, cfg), TraceFile: res.TraceFile}
+		meta := store.Meta{Suite: suite.Name, Judge: judgeLabel(judgeCfg), TraceFile: res.TraceFile}
 		if err := st.SaveRun(ctx, mres, meta); err != nil {
 			return err
 		}
@@ -395,12 +391,26 @@ func buildLLMClient(provider, model string) (*judge.Client, error) {
 	}
 }
 
-// judgeLabel mirrors the runner's pinning logic for the store meta.
-func judgeLabel(suite *spec.EvalSuite, cfg spec.RunConfig) string {
+// effectiveJudge resolves the judge for a run: scenario config first, suite
+// defaults second, explicit CLI overrides last. The same value labels the
+// persisted run (ADR-008) and builds the semantic client, so the store pin
+// always matches the judge that actually produced the verdict.
+func effectiveJudge(cfg spec.RunConfig, suite *spec.EvalSuite, judgeProvider, judgeModel string) spec.JudgeConfig {
 	judge := cfg.Judge
 	if judge.Provider == "" {
 		judge = suite.Defaults.Judge
 	}
+	if judgeProvider != "" {
+		judge.Provider = judgeProvider
+	}
+	if judgeModel != "" {
+		judge.Model = judgeModel
+	}
+	return judge
+}
+
+// judgeLabel renders the effective judge as a stable store pin.
+func judgeLabel(judge spec.JudgeConfig) string {
 	if judge.Provider == "" {
 		return "unset"
 	}
