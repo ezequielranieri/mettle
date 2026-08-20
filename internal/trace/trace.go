@@ -90,6 +90,8 @@ type ToolCall struct {
 // ToolResult records what a tool returned. OK and Empty are explicit and
 // independent (ADR-006): a call that returned zero rows is distinguishable
 // from an error, and both are distinguishable from "no call recorded".
+// DataPreview carries the bounded JSON preview of the payload (SEC-1) — the
+// full Data is never written to traces.
 type ToolResult struct {
 	Base
 	Tool        string `json:"tool"`
@@ -97,12 +99,14 @@ type ToolResult struct {
 	Empty       bool   `json:"empty"` // returned zero rows / no associated data
 	Error       string `json:"error,omitempty"`
 	DataSummary string `json:"data_summary,omitempty"`
+	DataPreview string `json:"data_preview,omitempty"`
 }
 
 // SandboxCall is the authoritative call record from the tool proxy
 // (ADR-005). It is the ground truth of what actually happened, independent
 // of the agent's self-reported ToolCall events. The oracle check (ADR-004)
-// runs on these events.
+// runs on these events. DataPreview carries the bounded JSON preview of the
+// payload (SEC-1) — the full Data is never written to traces.
 type SandboxCall struct {
 	Base
 	Tool        string         `json:"tool"`
@@ -113,6 +117,7 @@ type SandboxCall struct {
 	Empty       bool           `json:"empty"`
 	Error       string         `json:"error,omitempty"`
 	DataSummary string         `json:"data_summary,omitempty"`
+	DataPreview string         `json:"data_preview,omitempty"`
 }
 
 // Decision records a decision the agent made and whether it was visible

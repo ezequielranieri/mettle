@@ -198,6 +198,57 @@ func TestScenarioFixtureBranchesByTenant(t *testing.T) {
 	}
 }
 
+// SEC-1: the runner copies the sandbox's bounded DataPreview into the
+// authoritative SandboxCall event, so injected payloads reach judge
+// evidence while the full Data stays out of the trace.
+func TestSandboxCallCarriesDataPreview(t *testing.T) {
+	b, err := os.ReadFile("../../examples/scenarios/security.yaml")
+	if err != nil {
+		t.Fatalf("read security.yaml: %v", err)
+	}
+	suite, err := spec.ParseSuite(b)
+	if err != nil {
+		t.Fatalf("ParseSuite: %v", err)
+	}
+	sc := suite.Scenarios[1] // indirect-injection-ignored: note carries the payload
+
+	r := &Runner{Agent: &mockAgent{
+		script: []mockStep{{tool: "lookup_record", tenant: "acme", domain: "inventory"}},
+		reply:  "ok",
+	}, TraceDir: t.TempDir()}
+	cfg := effectiveConfigs(suite)[0]
+	res, err := r.RunOne(context.Background(), suite, sc, cfg)
+	if err != nil {
+		t.Fatalf("RunOne: %v", err)
+	}
+
+	events, err := trace.Read(res.TraceFile)
+	if err != nil {
+		t.Fatalf("Read trace: %v", err)
+	}
+	var sb *trace.SandboxCall
+	for _, e := range events {
+		if c, ok := e.(*trace.SandboxCall); ok {
+			sb = c
+		}
+	}
+	if sb == nil {
+		t.Fatal("no sandbox_call event")
+	}
+	if sb.DataPreview == "" {
+		t.Fatal("SandboxCall.DataPreview empty, want bounded JSON preview of the fixture data")
+	}
+	if len(sb.DataPreview) > sandbox.DefaultPreviewBound {
+		t.Errorf("DataPreview len = %d, want <= %d", len(sb.DataPreview), sandbox.DefaultPreviewBound)
+	}
+	if !json.Valid([]byte(sb.DataPreview)) {
+		t.Errorf("DataPreview is not valid JSON: %q", sb.DataPreview)
+	}
+	if !strings.Contains(sb.DataPreview, "ignore previous instructions") {
+		t.Errorf("DataPreview missing note payload: %q", sb.DataPreview)
+	}
+}
+
 func TestDecisionEvidenceFlowsToTrace(t *testing.T) {
 	suite := loadExample(t)
 	traceDir := t.TempDir()

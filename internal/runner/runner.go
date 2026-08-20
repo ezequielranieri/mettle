@@ -153,6 +153,7 @@ func (r *Runner) RunOne(ctx context.Context, suite *spec.EvalSuite, sc spec.Scen
 			Empty:       rec.Result.Empty,
 			Error:       rec.Result.Error,
 			DataSummary: rec.Result.DataSummary,
+			DataPreview: rec.Result.DataPreview,
 		}); err != nil {
 			return res, err
 		}
@@ -220,12 +221,12 @@ func fixtureResult(f spec.Fixture) sandbox.CallResult {
 			summary = "0 rows"
 		}
 		return sandbox.CallResult{OK: true, Empty: true, DataSummary: summary}
-	case f.Data != nil:
-		summary := f.DataSummary
-		if summary == "" {
-			summary = fmt.Sprintf("%d rows", len(f.Data))
-		}
-		return sandbox.CallResult{OK: true, Data: f.Data, DataSummary: summary}
+case f.Data != nil:
+			summary := f.DataSummary
+			if summary == "" {
+				summary = fmt.Sprintf("%d rows", len(f.Data))
+			}
+			return sandbox.CallResult{OK: true, Data: f.Data, DataSummary: summary, DataPreview: sandbox.PreviewData(f.Data, sandbox.DefaultPreviewBound)}
 	case f.DataSummary != "":
 		return sandbox.CallResult{OK: true, DataSummary: f.DataSummary}
 	default:
