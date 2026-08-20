@@ -22,6 +22,14 @@ type Finding struct {
 	Message  string
 }
 
+// MetricScore mirrors metrics.MetricScore for persistence (METR-3).
+type MetricScore struct {
+	Metric string
+	Value  float64
+	Status string
+	Source string
+}
+
 // Run is one persisted evaluation run.
 type Run struct {
 	RunID              string
@@ -42,6 +50,7 @@ type Run struct {
 	InputTokens        int
 	OutputTokens       int
 	Findings           []Finding
+	MetricScores       []MetricScore // one row per declared metric (METR-3)
 }
 
 // Meta carries the run context the metrics result does not have.
@@ -101,6 +110,14 @@ func migrate(db *sql.DB) error {
 			message TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_runs_lookup ON runs(scenario, config, created_at)`,
+		`CREATE TABLE IF NOT EXISTS metric_scores (
+			run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+			metric TEXT NOT NULL,
+			value REAL NOT NULL,
+			status TEXT NOT NULL,
+			source TEXT NOT NULL,
+			PRIMARY KEY (run_id, metric)
+		)`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {
@@ -141,6 +158,20 @@ func (s *Store) SaveRun(ctx context.Context, res metrics.Result, meta Meta) erro
 			`INSERT INTO findings (run_id, severity, code, message) VALUES (?, ?, ?, ?)`,
 			res.RunID, f.Severity, f.Code, f.Message); err != nil {
 			return fmt.Errorf("save finding: %w", err)
+		}
+	}
+
+	// Per-metric scores are upserted on (run_id, metric) in the same
+	// transaction (METR-3). The delete clears stale rows from a previous
+	// save with fewer metrics.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM metric_scores WHERE run_id = ?`, res.RunID); err != nil {
+		return fmt.Errorf("save metric scores: %w", err)
+	}
+	for _, m := range res.Metrics {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT OR REPLACE INTO metric_scores (run_id, metric, value, status, source) VALUES (?, ?, ?, ?, ?)`,
+			res.RunID, m.Name, m.Value, string(m.Status), string(m.Source)); err != nil {
+			return fmt.Errorf("save metric score: %w", err)
 		}
 	}
 
@@ -210,7 +241,7 @@ func (s *Store) CompareSuite(ctx context.Context, suite string) ([]Regression, e
 type Regression struct {
 	Scenario     string
 	Config       string
-	Compared     bool   // false when history is insufficient
+	Compared     bool // false when history is insufficient
 	IsRegression bool
 	Reasons      []string
 	PrevRun      *Run
@@ -304,6 +335,10 @@ func (s *Store) queryRuns(ctx context.Context, where string, args ...any) ([]Run
 		if err != nil {
 			return nil, err
 		}
+		r.MetricScores, err = s.loadMetricScores(ctx, r.RunID)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -338,6 +373,25 @@ func hasFinding(list []Finding, want Finding) bool {
 		}
 	}
 	return false
+}
+
+func (s *Store) loadMetricScores(ctx context.Context, runID string) ([]MetricScore, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT metric, value, status, source FROM metric_scores WHERE run_id = ? ORDER BY metric`, runID)
+	if err != nil {
+		return nil, fmt.Errorf("query metric scores: %w", err)
+	}
+	defer rows.Close()
+
+	var out []MetricScore
+	for rows.Next() {
+		var m MetricScore
+		if err := rows.Scan(&m.Metric, &m.Value, &m.Status, &m.Source); err != nil {
+			return nil, fmt.Errorf("scan metric score: %w", err)
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
 
 func boolInt(b bool) int {

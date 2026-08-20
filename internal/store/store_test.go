@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 
@@ -284,5 +285,131 @@ func TestCompareSuiteOverPairs(t *testing.T) {
 		if r.Scenario == "scenario-b" && r.IsRegression {
 			t.Error("scenario-b (single run) must not be a regression")
 		}
+	}
+}
+
+// --- metric_scores persistence (METR-3) ---
+
+func metricScores() []metrics.MetricScore {
+	return []metrics.MetricScore{
+		{Name: "routing_accuracy", Value: 100, Status: metrics.MetricStatusComputed, Source: metrics.MetricSourceDerived},
+		{Name: "data_leakage", Value: 0, Status: metrics.MetricStatusComputed, Source: metrics.MetricSourceHybrid},
+		{Name: "injection_resistance", Value: 0, Status: metrics.MetricStatusNotComputed, Source: metrics.MetricSourceJudge},
+	}
+}
+
+func TestSaveRunTwiceNoDuplicateMetricScores(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	r := result("run-1", true)
+	r.Metrics = metricScores()
+	for i := 0; i < 2; i++ {
+		if err := s.SaveRun(ctx, r, Meta{Suite: "s"}); err != nil {
+			t.Fatalf("SaveRun %d: %v", i, err)
+		}
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM metric_scores WHERE run_id = ?`, "run-1").Scan(&n); err != nil {
+		t.Fatalf("count metric_scores: %v", err)
+	}
+	if n != 3 {
+		t.Errorf("metric_scores rows = %d, want 3 (no duplicate run_id,metric)", n)
+	}
+	got, err := s.LatestRun(ctx, "scenario-a", "tools-3")
+	if err != nil {
+		t.Fatalf("LatestRun: %v", err)
+	}
+	if len(got.MetricScores) != 3 {
+		t.Fatalf("MetricScores = %d, want 3", len(got.MetricScores))
+	}
+	// runs columns untouched by the score upsert.
+	if got.LatencyMS != 1200 || !got.Pass || got.Scenario != "scenario-a" {
+		t.Errorf("run columns changed: %+v", got)
+	}
+}
+
+func TestOpenMigratesLegacyDBWithEmptyScores(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "legacy.db")
+
+	legacy, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open legacy db: %v", err)
+	}
+	// Pre-metric_scores schema: only the runs table exists.
+	if _, err := legacy.Exec(`CREATE TABLE runs (
+		run_id TEXT PRIMARY KEY,
+		suite TEXT NOT NULL,
+		scenario TEXT NOT NULL,
+		config TEXT NOT NULL,
+		outcome TEXT NOT NULL,
+		pass INTEGER NOT NULL,
+		judge TEXT NOT NULL,
+		trace_file TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		latency_ms INTEGER NOT NULL,
+		est_cost_usd REAL NOT NULL,
+		tool_calls INTEGER NOT NULL,
+		out_of_scope_calls INTEGER NOT NULL,
+		silent_restrictions INTEGER NOT NULL,
+		routing_pct REAL NOT NULL,
+		input_tokens INTEGER NOT NULL,
+		output_tokens INTEGER NOT NULL
+	)`); err != nil {
+		t.Fatalf("create legacy runs: %v", err)
+	}
+	legacy.Close()
+
+	s, err := Open(path) // migrates: adds metric_scores
+	if err != nil {
+		t.Fatalf("Open legacy db: %v", err)
+	}
+	defer s.Close()
+
+	if err := s.SaveRun(context.Background(), result("run-1", true), Meta{Suite: "s"}); err != nil {
+		t.Fatalf("SaveRun: %v", err)
+	}
+	got, err := s.LatestRun(context.Background(), "scenario-a", "tools-3")
+	if err != nil {
+		t.Fatalf("LatestRun: %v", err)
+	}
+	if got == nil || got.RunID != "run-1" {
+		t.Fatalf("legacy run lost: %+v", got)
+	}
+	if len(got.MetricScores) != 0 {
+		t.Errorf("legacy run MetricScores = %v, want empty (pre-change runs have no scores)", got.MetricScores)
+	}
+}
+
+func TestListRunsLoadsMetricScores(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	r := result("run-1", true)
+	r.Metrics = metricScores()
+	if err := s.SaveRun(ctx, r, Meta{Suite: "s"}); err != nil {
+		t.Fatalf("SaveRun: %v", err)
+	}
+	all, err := s.ListRuns(ctx, "s")
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("runs = %d, want 1", len(all))
+	}
+	got := all[0]
+	if len(got.MetricScores) != 3 {
+		t.Fatalf("MetricScores = %d, want 3", len(got.MetricScores))
+	}
+	byName := map[string]MetricScore{}
+	for _, m := range got.MetricScores {
+		byName[m.Metric] = m
+	}
+	ra, ok := byName["routing_accuracy"]
+	if !ok || ra.Value != 100 || ra.Status != string(metrics.MetricStatusComputed) || ra.Source != string(metrics.MetricSourceDerived) {
+		t.Errorf("routing_accuracy score = %+v, want computed/derived 100", ra)
+	}
+	inj, ok := byName["injection_resistance"]
+	if !ok || inj.Value != 0 || inj.Status != string(metrics.MetricStatusNotComputed) || inj.Source != string(metrics.MetricSourceJudge) {
+		t.Errorf("injection_resistance score = %+v, want not_computed/judge 0", inj)
 	}
 }
