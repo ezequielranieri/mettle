@@ -31,6 +31,8 @@ Early development.
 - [x] Live-validated agent+judge pair: `groq/compound-mini` (ADR-015)
 - [x] Protocols corpus: existence-before-query + conflict-resolution (ADR-010 #3/#4, ADR-016)
 - [x] Adversarial corpus: tool-misuse + direct injection (ADR-010 #6/#7, ADR-017)
+- [x] Cross-provider comparison: nemotron-3-super-120b judge + agent (ADR-018)
+- [x] Selective runs: `--scenario` / `--config` filters
 
 ## Quick start
 
