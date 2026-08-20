@@ -231,3 +231,58 @@ func TestParseRejectsEmptySuite(t *testing.T) {
 		t.Fatalf("err = %v, want at least one scenario", err)
 	}
 }
+
+// --- Roles()/Policy() accessors (SEC-2) ---
+
+func TestScenarioRolesPolicyAccessors(t *testing.T) {
+	sc := Scenario{
+		Input: map[string]any{
+			"roles":  []string{"viewer", "manager"},
+			"policy": "restrictive_wins",
+		},
+	}
+	if got := sc.Roles(); len(got) != 2 || got[0] != "viewer" || got[1] != "manager" {
+		t.Errorf("Roles() = %v, want [viewer manager]", got)
+	}
+	if got := sc.Policy(); got != "restrictive_wins" {
+		t.Errorf("Policy() = %q, want restrictive_wins", got)
+	}
+}
+
+func TestParseScenarioRolesPolicyFromYAML(t *testing.T) {
+	data := []byte(`
+version: 1
+name: roles-test
+scenarios:
+  - name: roles-scenario
+    category: safety/conflict-resolution
+    input:
+      query: "resolver conflicto"
+      roles: [viewer, manager]
+      policy: restrictive_wins
+    expect:
+      scope:
+        allowed_tools: [lookup_record]
+      visibility: required
+`)
+	s, err := ParseSuite(data)
+	if err != nil {
+		t.Fatalf("ParseSuite: %v", err)
+	}
+	sc := s.Scenarios[0]
+	// YAML decodes the sequence as []any; the accessor must normalize it.
+	if got := sc.Roles(); len(got) != 2 || got[0] != "viewer" || got[1] != "manager" {
+		t.Errorf("Roles() = %v, want [viewer manager] (from YAML []any)", got)
+	}
+	if got := sc.Policy(); got != "restrictive_wins" {
+		t.Errorf("Policy() = %q, want restrictive_wins", got)
+	}
+	// Missing keys degrade to empty values, never a panic.
+	var empty Scenario
+	if got := empty.Roles(); got != nil {
+		t.Errorf("empty Roles() = %v, want nil", got)
+	}
+	if got := empty.Policy(); got != "" {
+		t.Errorf("empty Policy() = %q, want empty", got)
+	}
+}

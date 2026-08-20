@@ -29,9 +29,9 @@ type EvalSuite struct {
 
 // Defaults are applied to every scenario unless overridden by a RunConfig.
 type Defaults struct {
-	Agent  AgentConfig  `yaml:"agent"`
-	Judge  JudgeConfig  `yaml:"judge"`
-	Budget Budget       `yaml:"budget"`
+	Agent  AgentConfig `yaml:"agent"`
+	Judge  JudgeConfig `yaml:"judge"`
+	Budget Budget      `yaml:"budget"`
 }
 
 // AgentConfig describes the agent under test.
@@ -58,13 +58,13 @@ type Budget struct {
 
 // Scenario is a single evaluation case with its expected world state.
 type Scenario struct {
-	Name        string         `yaml:"name"`
-	Category    string         `yaml:"category"`
-	Description string         `yaml:"description"`
-	Agent       AgentConfig    `yaml:"agent"`
-	Input       map[string]any `yaml:"input"`
+	Name        string             `yaml:"name"`
+	Category    string             `yaml:"category"`
+	Description string             `yaml:"description"`
+	Agent       AgentConfig        `yaml:"agent"`
+	Input       map[string]any     `yaml:"input"`
 	Fixtures    map[string]Fixture `yaml:"fixtures"`
-	Expect      Expectation    `yaml:"expect"`
+	Expect      Expectation        `yaml:"expect"`
 }
 
 // Fixture shapes one fake tool's response for a scenario (ADR-002): the
@@ -78,6 +78,41 @@ type Fixture struct {
 	Data        map[string]any     `yaml:"data"`
 	DataSummary string             `yaml:"data_summary"`
 	PerTenant   map[string]Fixture `yaml:"tenant"`
+}
+
+// Roles returns the declared input roles (SEC-2). Reads input["roles"], which
+// YAML decodes as []any; typed []string literals work too. Missing or
+// malformed values degrade to nil — never a panic.
+func (s *Scenario) Roles() []string {
+	v, ok := s.Input["roles"]
+	if !ok {
+		return nil
+	}
+	switch r := v.(type) {
+	case []string:
+		return r
+	case []any:
+		out := make([]string, 0, len(r))
+		for _, x := range r {
+			if str, ok := x.(string); ok {
+				out = append(out, str)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// Policy returns the declared input policy (SEC-2). Reads input["policy"].
+func (s *Scenario) Policy() string {
+	v, ok := s.Input["policy"]
+	if !ok {
+		return ""
+	}
+	if str, ok := v.(string); ok {
+		return str
+	}
+	return ""
 }
 
 // Expectation is the ground truth the harness verifies.
