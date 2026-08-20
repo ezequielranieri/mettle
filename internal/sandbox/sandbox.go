@@ -35,6 +35,10 @@ type CallResult struct {
 	Error       string         `json:"error,omitempty"`
 	DataSummary string         `json:"data_summary,omitempty"`
 	Data        map[string]any `json:"data,omitempty"`
+	// DataPreview is the bounded JSON preview of Data (SEC-1, design D5):
+	// the only shape that reaches traces, tool messages and judge evidence.
+	// Full Data stays in the sandbox response — never in traces.
+	DataPreview string `json:"data_preview,omitempty"`
 }
 
 // Record is one logged call — the compliance evidence (ADR-005).
@@ -143,6 +147,132 @@ func (s *Sandbox) Reset() {
 	s.records = nil
 }
 
+// DefaultPreviewBound is the 1-2KB bound for DataPreview (SEC-1).
+const DefaultPreviewBound = 2048
+
+// ellipsis marks collapsed or truncated content in a DataPreview.
+const ellipsis = "…"
+
+// PreviewData renders a bounded JSON preview of fixture data (design D5:
+// collapse + truncate, never a raw byte cut). Nested maps and slices
+// collapse to "…"; when the compact JSON exceeds bound, string values are
+// truncated (longest first) and keys dropped (largest value first) so the
+// result is always ≤ bound and always valid JSON. The design named this
+// previewData; it is exported because runner.fixtureResult needs it.
+func PreviewData(data map[string]any, bound int) string {
+	if len(data) == 0 || bound <= 0 {
+		return ""
+	}
+	flat := make(map[string]any, len(data))
+	for k, v := range data {
+		switch v.(type) {
+		case map[string]any, []any:
+			flat[k] = ellipsis
+		default:
+			flat[k] = v
+		}
+	}
+	b, err := json.Marshal(flat) // map keys sort: deterministic output
+	if err != nil {
+		return ""
+	}
+	if len(b) <= bound {
+		return string(b)
+	}
+
+	keys := make([]string, 0, len(flat))
+	for k := range flat {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	// Truncate the longest string value until the payload fits. Each step
+	// strictly shrinks the value, so the loop always terminates.
+	for len(b) > bound {
+		target := ""
+		for _, k := range keys {
+			s, ok := flat[k].(string)
+			if !ok || len(s) <= 1 {
+				continue
+			}
+			if target == "" || len(s) > len(flat[target].(string)) {
+				target = k
+			}
+		}
+		if target == "" {
+			break
+		}
+		s := flat[target].(string)
+		newLen := len(s) - (len(b) - bound) - len(ellipsis)
+		if newLen < 1 {
+			newLen = 1
+		}
+		if newLen >= len(s) {
+			newLen = len(s) - 1
+		}
+		v := s[:newLen]
+		if len(v)+len(ellipsis) < len(s) {
+			v += ellipsis
+		}
+		flat[target] = v
+		b, err = json.Marshal(flat)
+		if err != nil {
+			return ""
+		}
+	}
+
+	// Drop the largest serialized value until the payload fits.
+	for len(b) > bound && len(flat) > 1 {
+		drop := ""
+		longest := -1
+		for _, k := range keys {
+			v, ok := flat[k]
+			if !ok {
+				continue
+			}
+			vb, err := json.Marshal(v)
+			if err != nil {
+				continue
+			}
+			if len(vb) > longest {
+				longest = len(vb)
+				drop = k
+			}
+		}
+		delete(flat, drop)
+		b, err = json.Marshal(flat)
+		if err != nil {
+			return ""
+		}
+	}
+
+	// Last resort: a single oversized key name — truncate it too.
+	for len(b) > bound {
+		shrunk := false
+		for k := range flat {
+			newLen := len(k) - (len(b) - bound)
+			if newLen < 2 {
+				newLen = 2
+			}
+			if newLen < len(k) {
+				v := flat[k]
+				delete(flat, k)
+				flat[k[:newLen]] = v
+				shrunk = true
+			}
+			b, err = json.Marshal(flat)
+			if err != nil {
+				return ""
+			}
+			break
+		}
+		if !shrunk {
+			break
+		}
+	}
+	return string(b)
+}
+
 // FixtureTool builds the common fake tool: it returns the configured data
 // for its owning tenant/domain and a controlled response otherwise.
 // Exactly one of empty/err/data shapes the response.
@@ -158,7 +288,7 @@ func FixtureTool(name, tenant, domain string, empty bool, emptySummary, errMsg s
 			if empty {
 				return CallResult{OK: true, Empty: true, DataSummary: emptySummary}
 			}
-			return CallResult{OK: true, Data: data, DataSummary: fmt.Sprintf("%d rows", len(data))}
+			return CallResult{OK: true, Data: data, DataSummary: fmt.Sprintf("%d rows", len(data)), DataPreview: PreviewData(data, DefaultPreviewBound)}
 		},
 	}
 }
