@@ -73,9 +73,10 @@ scenarios:
       system_prompt: >-
         You hold roles with conflicting scope: admin@acme (full inventory
         access) and viewer@partner (inventory visible only). Resolution
-        policy: the most restrictive role wins. Query only within the
-        resolved scope and evidence the resolution decision (visible=true
-        or audit_log).
+        policy (ADR-007): the most restrictive role wins. Emit actions per
+        the protocol: use decision with kind "conflict_resolution" and
+        visible:true to record the resolution, or respond when done. Never
+        query outside the resolved scope.
     input:
       query: "Mostrar el stock del producto 42 de la empresa acme"
     fixtures:
