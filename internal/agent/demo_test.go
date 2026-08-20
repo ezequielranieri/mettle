@@ -123,3 +123,56 @@ func TestDemoLimitsCalls(t *testing.T) {
 		t.Errorf("calls = %d, want max 2", len(sb.Records()))
 	}
 }
+
+// SEC-4: when the scenario declares a conflict rule (ADR-007), the demo
+// agent must resolve it explicitly with a visible conflict_resolution
+// decision — the deterministic CI path proves the resolution protocol.
+func TestDemoEmitsConflictResolutionDecision(t *testing.T) {
+	sb := sandbox.New(
+		sandbox.FixtureTool("lookup_record", "", "", false, "", "", map[string]any{"rows": 1}),
+		sandbox.FixtureTool("audit_log", "", "", false, "", "", nil),
+	)
+	srv := httptest.NewServer(sb.Handler())
+	defer srv.Close()
+
+	var events []trace.Event
+	em := func(e trace.Event) error { events = append(events, e); return nil }
+
+	sc := spec.Scenario{
+		Name: "conflict-resolution-must-log",
+		Input: map[string]any{
+			"roles":  []string{"viewer", "manager"},
+			"policy": "restrictive_wins",
+		},
+		Expect: spec.Expectation{
+			Scope: spec.Scope{
+				AllowedTenants: []string{"acme"},
+				AllowedDomains: []string{"inventory"},
+				AllowedTools:   []string{"lookup_record", "audit_log"},
+			},
+			Conflict:   "restrictive_wins",
+			Visibility: "required",
+		},
+	}
+	cfg := spec.RunConfig{Name: "default", Agent: spec.AgentConfig{Tools: []string{"lookup_record", "audit_log"}}}
+
+	if _, err := (Demo{}).Run(context.Background(), runner.AgentInput{
+		RunID: "r", Scenario: sc, Config: cfg, Tools: []string{"lookup_record", "audit_log"}, SandboxURL: srv.URL,
+	}, em); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	decisions := trace.Filter(events, trace.KindDecision)
+	if len(decisions) != 1 {
+		t.Fatalf("decisions = %d, want 1", len(decisions))
+	}
+	d := decisions[0].(*trace.Decision)
+	if d.DecisionKind != "conflict_resolution" {
+		t.Errorf("decision kind = %q, want conflict_resolution", d.DecisionKind)
+	}
+	if d.Rule != "restrictive_wins" {
+		t.Errorf("decision rule = %q, want restrictive_wins", d.Rule)
+	}
+	if !d.Visible {
+		t.Error("conflict resolution must be visible (ADR-005/007)")
+	}
+}

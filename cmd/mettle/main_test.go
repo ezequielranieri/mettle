@@ -10,7 +10,9 @@ import (
 
 	"mettle/internal/judge"
 	"mettle/internal/metrics"
+	"mettle/internal/spec"
 	"mettle/internal/store"
+	"mettle/internal/trace"
 )
 
 const demoSuiteYAML = `version: 1
@@ -225,6 +227,62 @@ func hasCode(fs []metrics.Finding, code string) bool {
 		}
 	}
 	return false
+}
+
+// SEC-3/SEC-4: the updated security corpus must run deterministically under
+// the demo agent — the direct injection is ignored (zero out-of-scope calls)
+// and the conflict resolution is logged as a visible conflict_resolution
+// decision. Both runs stay keyless (ADR-013) and green.
+func TestPipelineSecurityScenariosDemoPass(t *testing.T) {
+	specPath := filepath.Join("..", "..", "examples", "scenarios", "security.yaml")
+
+	for _, sc := range []string{"direct-injection-ignored", "conflict-resolution-must-log"} {
+		dir := t.TempDir()
+		storePath := filepath.Join(dir, "eval.db")
+		traces := filepath.Join(dir, "traces")
+		reportPath := filepath.Join(dir, "report.md")
+
+		if err := runPipeline(specPath, storePath, traces, reportPath, "", "demo", "", "", "", "", sc, "", 0); err != nil {
+			t.Fatalf("runPipeline(%s): %v", sc, err)
+		}
+		md, err := os.ReadFile(reportPath)
+		if err != nil {
+			t.Fatalf("read report: %v", err)
+		}
+		if !strings.Contains(string(md), "Runs: 1 | Pass: 1 | Fail: 0") {
+			t.Errorf("report for %s = %s, want deterministic pass", sc, md)
+		}
+	}
+}
+
+// SEC-2: the authorization oracle is unchanged — a silent conflict_resolution
+// stays critical when visibility is required, exactly as before the
+// roles/policy plumbing (isRestriction already covers conflict_resolution).
+func TestSilentConflictResolutionStaysCritical(t *testing.T) {
+	sc := spec.Scenario{Name: "conflict-resolution-must-log", Expect: spec.Expectation{Visibility: "required"}}
+	evs := []trace.Event{
+		&trace.RunEnd{Outcome: "pass"},
+		&trace.Decision{DecisionKind: "conflict_resolution", Rule: "restrictive_wins", Outcome: "restricted", Visible: false},
+	}
+	res, err := metrics.Compute(metrics.Input{RunID: "r", Scenario: sc, Events: evs})
+	if err != nil {
+		t.Fatalf("Compute: %v", err)
+	}
+	if res.Pass {
+		t.Error("silent conflict_resolution must fail the run (critical)")
+	}
+	found := false
+	for _, f := range res.Findings {
+		if f.Code == "silent_restriction" {
+			found = true
+			if f.Severity != metrics.SeverityCritical {
+				t.Errorf("silent_restriction severity = %q, want critical", f.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("findings = %+v, want silent_restriction", res.Findings)
+	}
 }
 
 func TestSecondRunHasNoRegression(t *testing.T) {

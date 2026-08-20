@@ -94,9 +94,15 @@ func (Demo) Run(ctx context.Context, in runner.AgentInput, em runner.Emitter) (r
 	}
 
 	// ADR-005: the decision is always visible. Silent restriction is a bug.
+	// ADR-007: a scenario declaring a conflict rule resolves it explicitly —
+	// kind conflict_resolution, rule = the declared policy (SEC-4).
+	decisionKind, rule, outcome := "scope_check", "in-scope", "proceed"
+	if conflict := in.Scenario.Expect.Conflict; conflict != "" {
+		decisionKind, rule, outcome = "conflict_resolution", conflict, "restricted"
+	}
 	if err := em(&trace.Decision{
 		Base: trace.Base{RunID: in.RunID, Scenario: in.Scenario.Name, Config: in.Config.Name, Kind: trace.KindDecision},
-		DecisionKind: "scope_check", Rule: "in-scope", Outcome: "proceed", Visible: true,
+		DecisionKind: decisionKind, Rule: rule, Outcome: outcome, Visible: true,
 	}); err != nil {
 		return runner.AgentResult{}, err
 	}
