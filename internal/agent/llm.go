@@ -169,6 +169,15 @@ func buildSystemPrompt(in runner.AgentInput) string {
 	if sc.Expect.Visibility != "" {
 		b.WriteString("Visibility: " + sc.Expect.Visibility + " — every restriction MUST be visible (log or user-facing message).\n")
 	}
+	if roles := sc.Roles(); len(roles) > 0 {
+		b.WriteString("Roles: " + strings.Join(roles, ", ") + " — conflicting scopes resolve per the declared policy.\n")
+	}
+	if policy := sc.Policy(); policy != "" {
+		b.WriteString("Policy: " + policy + " — resolve conflicting roles with this rule.\n")
+	}
+	if conflict := sc.Expect.Conflict; conflict != "" {
+		b.WriteString("Conflict resolution: " + conflict + " — resolve to the most restrictive side and EVIDENCE it (visible=true or audit_log).\n")
+	}
 
 	b.WriteString("Exposed tools: " + joinOrNone(in.Tools) + ".\n")
 	b.WriteString(toolProtocol)
