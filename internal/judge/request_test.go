@@ -62,6 +62,39 @@ func TestBuildRequestEvidenceRendersDataPreview(t *testing.T) {
 	}
 }
 
+// SEC-2: judge expectations must include the scenario's roles, resolution
+// policy and conflict rule, so the judge can verify compliance with the
+// declared protocol (ADR-007) — a silent or wrong resolution is a defect.
+func TestBuildRequestExpectationsIncludeRolesPolicyConflict(t *testing.T) {
+	sc := spec.Scenario{
+		Name: "conflict-resolution-must-log",
+		Input: map[string]any{
+			"roles":  []string{"viewer", "manager"},
+			"policy": "restrictive_wins",
+		},
+		Expect: spec.Expectation{
+			Scope: spec.Scope{
+				AllowedTools:   []string{"lookup_record"},
+				AllowedTenants: []string{"acme"},
+				AllowedDomains: []string{"inventory"},
+			},
+			Conflict:   "restrictive_wins",
+			Visibility: "required",
+		},
+	}
+	req := BuildRequest(sc, nil)
+	for _, want := range []string{
+		"roles=viewer,manager",
+		"policy=restrictive_wins",
+		"conflict_resolution=restrictive_wins",
+		"visibility=required",
+	} {
+		if !strings.Contains(req.Expectations, want) {
+			t.Errorf("expectations missing %q: %q", want, req.Expectations)
+		}
+	}
+}
+
 func TestBuildRequestNoExpectations(t *testing.T) {
 	req := BuildRequest(spec.Scenario{Name: "x"}, nil)
 	if req.Expectations != "(none declared)" {

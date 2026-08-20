@@ -34,12 +34,19 @@ func BuildRequest(sc spec.Scenario, evs []trace.Event) Request {
 		scopeParts = append(scopeParts, "domains="+strings.Join(sc.Expect.Scope.AllowedDomains, ","))
 	}
 	req.Expectations = strings.Join(scopeParts, "; ")
-	if sc.Expect.Visibility != "" {
+	add := func(key, val string) {
+		if val == "" {
+			return
+		}
 		if req.Expectations != "" {
 			req.Expectations += "; "
 		}
-		req.Expectations += "visibility=" + sc.Expect.Visibility
+		req.Expectations += key + "=" + val
 	}
+	add("visibility", sc.Expect.Visibility)
+	add("roles", strings.Join(sc.Roles(), ",")) // SEC-2: declared input roles
+	add("policy", sc.Policy())                  // SEC-2: declared resolution policy
+	add("conflict_resolution", sc.Expect.Conflict) // SEC-2: ADR-007 rule
 	if req.Expectations == "" {
 		req.Expectations = "(none declared)"
 	}
