@@ -16,3 +16,7 @@ report.html
 # Editor
 .idea/
 .vscode/
+
+# Local tool caches (machine-local, not source)
+.codegraph/
+.atl/

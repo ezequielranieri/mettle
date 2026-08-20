@@ -32,3 +32,8 @@ jobs:
             --store /tmp/ci-eval-security.db \
             --traces /tmp/ci-security-traces \
             --report /tmp/ci-security-report.md
+          go run ./cmd/mettle run \
+            --spec examples/scenarios/protocols.yaml \
+            --store /tmp/ci-eval-protocols.db \
+            --traces /tmp/ci-protocols-traces \
+            --report /tmp/ci-protocols-report.md

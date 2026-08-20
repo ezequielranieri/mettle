@@ -105,6 +105,48 @@ func TestParseEmptyStatesFixtures(t *testing.T) {
 	}
 }
 
+func TestParseProtocolsSuiteFixtures(t *testing.T) {
+	suite, err := ParseSuite(mustRead(t, "../../examples/scenarios/protocols.yaml"))
+	if err != nil {
+		t.Fatalf("ParseSuite(protocols.yaml): %v", err)
+	}
+	if suite.Name != "protocols" {
+		t.Errorf("name = %q, want protocols", suite.Name)
+	}
+	if len(suite.Scenarios) != 2 {
+		t.Fatalf("scenarios = %d, want 2", len(suite.Scenarios))
+	}
+	byName := map[string]Scenario{}
+	for _, sc := range suite.Scenarios {
+		byName[sc.Name] = sc
+	}
+
+	ex := byName["existence-before-query"]
+	if ex.Category != CategoryExistenceCheck {
+		t.Errorf("existence category = %q, want %q", ex.Category, CategoryExistenceCheck)
+	}
+	chk, ok := ex.Fixtures["check_product"]
+	if !ok || !chk.Empty {
+		t.Errorf("check_product fixture = %+v, want empty=true", chk)
+	}
+	det, ok := ex.Fixtures["get_product_details"]
+	if !ok || det.Data["product"] != "99" || det.Data["price"] != 9999 {
+		t.Errorf("get_product_details fixture = %+v, want stale legacy data", det)
+	}
+
+	conf := byName["conflict-restrictive-wins"]
+	if conf.Category != CategoryConflictPolicy {
+		t.Errorf("conflict category = %q, want %q", conf.Category, CategoryConflictPolicy)
+	}
+	if conf.Expect.Conflict != "restrictive_wins" {
+		t.Errorf("conflict_resolution = %q, want restrictive_wins", conf.Expect.Conflict)
+	}
+	fx, ok := conf.Fixtures["lookup_record"]
+	if !ok || fx.PerTenant["acme"].Data["stock"] != 8 || fx.PerTenant["partner"].Error != "tenant not provisioned" {
+		t.Errorf("lookup_record fixture = %+v, want acme data + partner error", fx)
+	}
+}
+
 func mustRead(t *testing.T, path string) []byte {
 	t.Helper()
 	b, err := os.ReadFile(path)
