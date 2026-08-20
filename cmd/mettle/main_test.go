@@ -45,7 +45,7 @@ configs:
 
 func runOnce(t *testing.T, specPath, storePath, traces, reportPath string) string {
 	t.Helper()
-	if err := runPipeline(specPath, storePath, traces, reportPath, "", "demo", "", "", "", "", 0); err != nil {
+	if err := runPipeline(specPath, storePath, traces, reportPath, "", "demo", "", "", "", "", "", "", 0); err != nil {
 		t.Fatalf("runPipeline: %v", err)
 	}
 	data, err := os.ReadFile(reportPath)
@@ -53,6 +53,76 @@ func runOnce(t *testing.T, specPath, storePath, traces, reportPath string) strin
 		t.Fatalf("read report: %v", err)
 	}
 	return string(data)
+}
+
+func TestPipelineScenarioFilter(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "suite.yaml")
+	twoScenarios := `version: 1
+name: demo-suite
+defaults:
+  agent:
+    provider: groq
+    model: llama-3.3-70b-versatile
+    tools: [lookup_record]
+  budget:
+    max_latency_ms: 30000
+    min_routing_pct: 90
+scenarios:
+  - name: demo-scenario
+    category: quality/empty-states
+    description: demo scenario
+    input:
+      query: "x"
+    expect:
+      scope:
+        allowed_tenants: [acme]
+        allowed_domains: [inventory]
+        allowed_tools: [lookup_record]
+      visibility: required
+  - name: other-scenario
+    category: quality/empty-states
+    description: other
+    input:
+      query: "y"
+    expect:
+      scope:
+        allowed_tenants: [acme]
+        allowed_domains: [inventory]
+        allowed_tools: [lookup_record]
+      visibility: required
+configs:
+  - name: tools-1
+    agent:
+      provider: groq
+      model: llama-3.3-70b-versatile
+      tools: [lookup_record]
+`
+	if err := os.WriteFile(specPath, []byte(twoScenarios), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	storePath := filepath.Join(dir, "eval.db")
+	traces := filepath.Join(dir, "traces")
+	reportPath := filepath.Join(dir, "report.md")
+
+	if err := runPipeline(specPath, storePath, traces, reportPath, "", "demo", "", "", "", "", "demo-scenario", "", 0); err != nil {
+		t.Fatalf("runPipeline with scenario filter: %v", err)
+	}
+	md, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	if !strings.Contains(string(md), "Runs: 1 | Pass: 1 | Fail: 0") {
+		t.Errorf("report = %s, want 1 run", md)
+	}
+	if strings.Contains(string(md), "other-scenario") {
+		t.Errorf("report contains filtered-out scenario")
+	}
+
+	// Unknown scenario is an error, never an empty silent run.
+	if err := runPipeline(specPath, storePath, traces, reportPath, "", "demo", "", "", "", "", "nope", "", 0); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Errorf("unknown scenario err = %v, want not found", err)
+	}
 }
 
 func TestPipelineEndToEndAndGate(t *testing.T) {

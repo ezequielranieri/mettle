@@ -54,7 +54,8 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: mettle <run|report> [flags]")
 	fmt.Fprintln(os.Stderr, "  run    --spec <file.yaml> [--store path] [--traces dir] [--report path] [--html path]")
-	fmt.Fprintln(os.Stderr, "         [--agent demo|llm] [--provider p] [--model m] [--judge-provider p] [--judge-model m] [--max-steps n]")
+	fmt.Fprintln(os.Stderr, "         [--agent demo|llm] [--provider p] [--model m] [--judge-provider p] [--judge-model m]")
+	fmt.Fprintln(os.Stderr, "         [--scenario name] [--config name] [--max-steps n]")
 	fmt.Fprintln(os.Stderr, "  report [--store path] [--suite name] [--report path] [--html path]")
 }
 
@@ -70,20 +71,49 @@ func cmdRun(args []string) error {
 	model := fs.String("model", "", "model for --agent llm (default: spec defaults)")
 	judgeProvider := fs.String("judge-provider", "", "provider for the semantic judge (default: spec defaults)")
 	judgeModel := fs.String("judge-model", "", "model for the semantic judge (default: spec defaults)")
+	scenarioFilter := fs.String("scenario", "", "run only this scenario name from the suite")
+	configFilter := fs.String("config", "", "run only this config name from the suite")
 	maxSteps := fs.Int("max-steps", agent.DefaultMaxSteps, "max LLM steps per run (--agent llm)")
 	_ = fs.Parse(args)
 	if *specPath == "" {
 		return fmt.Errorf("--spec is required")
 	}
-	return runPipeline(*specPath, *storePath, *tracesDir, *reportPath, *htmlPath, *agentKind, *provider, *model, *judgeProvider, *judgeModel, *maxSteps)
+	return runPipeline(*specPath, *storePath, *tracesDir, *reportPath, *htmlPath, *agentKind, *provider, *model, *judgeProvider, *judgeModel, *scenarioFilter, *configFilter, *maxSteps)
 }
 
 // runPipeline executes the evaluation matrix and enforces the CI gate.
 // It is a separate function so the end-to-end flow is testable.
-func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind, provider, model, judgeProvider, judgeModel string, maxSteps int) error {
+func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind, provider, model, judgeProvider, judgeModel, scenarioFilter, configFilter string, maxSteps int) error {
 	suite, err := spec.LoadSuite(specPath)
 	if err != nil {
 		return err
+	}
+	// Selective runs: --scenario/--config narrow the suite before the runner
+	// sees it. Useful for cheap live validation of a single case
+	// (ADR-015/016/017) and for model comparisons on the same scenario.
+	if scenarioFilter != "" {
+		var kept []spec.Scenario
+		for _, sc := range suite.Scenarios {
+			if sc.Name == scenarioFilter {
+				kept = append(kept, sc)
+			}
+		}
+		if len(kept) == 0 {
+			return fmt.Errorf("scenario %q not found in suite %s", scenarioFilter, suite.Name)
+		}
+		suite.Scenarios = kept
+	}
+	if configFilter != "" {
+		var kept []spec.RunConfig
+		for _, cfg := range suite.Configs {
+			if cfg.Name == configFilter {
+				kept = append(kept, cfg)
+			}
+		}
+		if len(kept) == 0 {
+			return fmt.Errorf("config %q not found in suite %s", configFilter, suite.Name)
+		}
+		suite.Configs = kept
 	}
 	ag, err := buildAgent(agentKind, provider, model, maxSteps, suite)
 	if err != nil {
