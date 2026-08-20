@@ -116,7 +116,7 @@ func (a *LLM) Run(ctx context.Context, in runner.AgentInput, em runner.Emitter) 
 			}
 			if err := em(&trace.ToolResult{
 				Base: trace.Base{RunID: in.RunID, Scenario: in.Scenario.Name, Config: in.Config.Name, Kind: trace.KindToolResult},
-				Tool: act.Tool, OK: res.OK, Empty: res.Empty, Error: res.Error, DataSummary: res.DataSummary,
+				Tool: act.Tool, OK: res.OK, Empty: res.Empty, Error: res.Error, DataSummary: res.DataSummary, DataPreview: res.DataPreview,
 			}); err != nil {
 				return runner.AgentResult{}, err
 			}
@@ -196,7 +196,11 @@ func buildUserPrompt(in runner.AgentInput) string {
 }
 
 func toolResultMsg(tool string, res sandbox.CallResult) string {
-	return fmt.Sprintf("tool_result for %s: ok=%v empty=%v error=%q summary=%q", tool, res.OK, res.Empty, res.Error, res.DataSummary)
+	msg := fmt.Sprintf("tool_result for %s: ok=%v empty=%v error=%q summary=%q", tool, res.OK, res.Empty, res.Error, res.DataSummary)
+	if res.DataPreview != "" {
+		msg += fmt.Sprintf(" data=%q", res.DataPreview)
+	}
+	return msg
 }
 
 func parseAction(content string) (action, error) {

@@ -55,6 +55,9 @@ func BuildRequest(sc spec.Scenario, evs []trace.Event) Request {
 			if ev.DataSummary != "" {
 				line += fmt.Sprintf(" summary=%q", ev.DataSummary)
 			}
+			if ev.DataPreview != "" {
+				line += fmt.Sprintf(" data=%q", ev.DataPreview)
+			}
 			evidence = append(evidence, line)
 		case *trace.Decision:
 			evidence = append(evidence, fmt.Sprintf("decision %s rule=%q outcome=%q visible=%v", ev.DecisionKind, ev.Rule, ev.Outcome, ev.Visible))

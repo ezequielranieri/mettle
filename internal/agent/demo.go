@@ -86,7 +86,7 @@ func (Demo) Run(ctx context.Context, in runner.AgentInput, em runner.Emitter) (r
 		}
 		if err := em(&trace.ToolResult{
 			Base: trace.Base{RunID: in.RunID, Scenario: in.Scenario.Name, Config: in.Config.Name, Kind: trace.KindToolResult},
-			Tool: tool, OK: res.OK, Empty: res.Empty, Error: res.Error, DataSummary: res.DataSummary,
+			Tool: tool, OK: res.OK, Empty: res.Empty, Error: res.Error, DataSummary: res.DataSummary, DataPreview: res.DataPreview,
 		}); err != nil {
 			return runner.AgentResult{}, err
 		}
