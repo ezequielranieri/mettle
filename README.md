@@ -28,7 +28,7 @@ behaves that way. The spec is the oracle; the model either passes or fails it.
 ## Architecture
 
 ```
-cmd/mettle          CLI entry point (run, report, calibrate)
+cmd/mettle          CLI entry point (run, report, dashboard, export, calibrate, version)
 internal/
   spec/             YAML spec parser + JSON Schema validation
   runner/           Scenario × config matrix executor
@@ -39,6 +39,7 @@ internal/
   trace/            JSONL append-only event log
   report/           Markdown + HTML report generation + interactive dashboard
   export/           External observability platform adapters (LangSmith, Braintrust)
+  calib/            Judge calibration (golden set, confusion matrix)
   sandbox/          Tool proxy (controlled responses, per-tenant branching)
 examples/
   scenarios/        Evaluation corpus (empty-states, security, protocols, adversarial)

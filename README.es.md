@@ -29,7 +29,7 @@ realmente se comporta así. El spec es el oráculo; el modelo lo pasa o lo falla
 ## Arquitectura
 
 ```
-cmd/mettle          entry point del CLI (run, report, calibrate)
+cmd/mettle          entry point del CLI (run, report, dashboard, export, calibrate, version)
 internal/
   spec/             parser de specs YAML + validación por JSON Schema
   runner/           executor de matriz escenario × config
@@ -40,6 +40,7 @@ internal/
   trace/            log de eventos JSONL append-only
   report/           generación de reportes markdown + HTML + dashboard interactivo
   export/           adaptadores para plataformas de observabilidad externas (LangSmith, Braintrust)
+  calib/            calibración del judge (golden set, matriz de confusión)
   sandbox/          proxy de tools (respuestas controladas, branching por tenant)
 examples/
   scenarios/        corpus de evaluación (empty-states, security, protocols, adversarial)

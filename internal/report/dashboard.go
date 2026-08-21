@@ -360,6 +360,10 @@ const drillTitle = document.getElementById('drillTitle');
 const drillContent = document.getElementById('drillContent');
 const drillFindings = document.getElementById('drillFindings');
 
+function escapeJS(s) {
+  return String(s).replace(/&/g,'\\&').replace(/</g,'\\<').replace(/>/g,'\\>').replace(/"/g,'\\"').replace(/'/g,"\\'");
+}
+
 // Sort
 let sortCol = null, sortAsc = true;
 table.querySelectorAll('th').forEach(th => {
@@ -395,7 +399,7 @@ function render() {
     });
   }
   tbody.innerHTML = data.map((r,i) => '<tr class="run-row" data-idx="'+runs.indexOf(r)+'">'
-    +'<td>'+r.scenario+'</td><td>'+r.config+'</td><td>'+r.outcome+'</td>'
+    +'<td>'+escapeJS(r.scenario)+'</td><td>'+escapeJS(r.config)+'</td><td>'+escapeJS(r.outcome)+'</td>'
     +'<td class="'+(r.pass?'pass':'fail')+'">'+r.pass+'</td>'
     +'<td>'+r.routing_pct.toFixed(1)+'%</td><td>'+r.latency_ms+'ms</td>'
     +'<td>$'+r.est_cost_usd.toFixed(4)+'</td><td>'+r.input_tokens+'</td>'
@@ -415,10 +419,10 @@ function openDrilldown(r) {
     ['Routing', r.routing_pct.toFixed(1)+'%'], ['Tool Calls', r.tool_calls],
     ['Input Tokens', r.input_tokens], ['Output Tokens', r.output_tokens],
     ['Judge', r.judge], ['Trace', r.trace_file]
-  ].map(([k,v]) => '<dt>'+k+'</dt><dd>'+v+'</dd>').join('');
+  ].map(([k,v]) => '<dt>'+escapeJS(k)+'</dt><dd>'+escapeJS(String(v))+'</dd>').join('');
   drillFindings.innerHTML = r.findings.length
     ? '<h4>Findings</h4>' + r.findings.map(f =>
-      '<div class="'+f.severity+'"><strong>'+f.severity+'</strong> <code>'+f.code+'</code>: '+f.message+'</div>'
+      '<div class="'+escapeJS(f.severity)+'"><strong>'+escapeJS(f.severity)+'</strong> <code>'+escapeJS(f.code)+'</code>: '+escapeJS(f.message)+'</div>'
     ).join('')
     : '<p style="opacity:.5">No findings</p>';
   drilldown.classList.add('open');
@@ -433,10 +437,46 @@ render();
 </body>
 </html>`
 
+// escapeJS escapes a string for safe use inside JavaScript string literals.
+// It replaces characters that have special meaning in JS or HTML contexts.
+func escapeJS(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `&`, `\&`)
+	s = strings.ReplaceAll(s, `<`, `\<`)
+	s = strings.ReplaceAll(s, `>`, `\>`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, `'`, `\'`)
+	return s
+}
+
+// toFloat64 converts a numeric value to float64 for template math functions.
+func toFloat64(v any) float64 {
+	switch n := v.(type) {
+	case float64:
+		return n
+	case float32:
+		return float64(n)
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	case int32:
+		return float64(n)
+	default:
+		return 0
+	}
+}
+
 // DashboardFuncs adds custom template functions for the dashboard.
 var dashboardFuncs = template.FuncMap{
-	"mul": func(a, b float64) float64 { return a * b },
-	"divf": func(a, b float64) float64 { return a / b },
+	"mul": func(a, b any) float64 {
+		return toFloat64(a) * toFloat64(b)
+	},
+	"divf": func(a, b any) float64 {
+		d := toFloat64(b)
+		if d == 0 { return 0 }
+		return toFloat64(a) / d
+	},
 	"latencyBar": func(v, max int64) float64 {
 		if max == 0 { return 0 }
 		return float64(v) / float64(max) * 100
@@ -448,6 +488,9 @@ var dashboardFuncs = template.FuncMap{
 	"json": func(v any) template.JS {
 		b, _ := json.Marshal(v)
 		return template.JS(b)
+	},
+	"escapeJS": func(s string) template.JS {
+		return template.JS(escapeJS(s))
 	},
 }
 
