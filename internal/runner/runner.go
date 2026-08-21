@@ -76,6 +76,61 @@ func (r *Runner) RunSuite(ctx context.Context, suite *spec.EvalSuite) ([]Result,
 	return results, nil
 }
 
+// RunSlice runs a specific slice of the matrix (for CI parallelism).
+// sliceNum is 1-indexed, totalSlices is the total number of slices.
+// Example: sliceNum=1, totalSlices=4 runs the first quarter of scenarios.
+func (r *Runner) RunSlice(ctx context.Context, suite *spec.EvalSuite, sliceNum, totalSlices int) ([]Result, error) {
+	if sliceNum < 1 || sliceNum > totalSlices {
+		return nil, fmt.Errorf("slice %d/%d: sliceNum must be between 1 and %d", sliceNum, totalSlices, totalSlices)
+	}
+
+	// Flatten the matrix
+	type runItem struct {
+		scenario spec.Scenario
+		config   spec.RunConfig
+	}
+	var matrix []runItem
+	for _, sc := range suite.Scenarios {
+		for _, cfg := range effectiveConfigs(suite) {
+			matrix = append(matrix, runItem{sc, cfg})
+		}
+	}
+
+	// Calculate slice boundaries
+	total := len(matrix)
+	perSlice := total / totalSlices
+	remainder := total % totalSlices
+
+	start := (sliceNum - 1) * perSlice
+	end := start + perSlice
+	// Distribute remainder to first slices
+	if sliceNum <= remainder {
+		start += sliceNum - 1
+		end = start + perSlice + 1
+	} else {
+		start += remainder
+		end = start + perSlice
+	}
+
+	if start >= total {
+		return nil, nil // slice has no work
+	}
+	if end > total {
+		end = total
+	}
+
+	// Run the slice
+	var results []Result
+	for _, item := range matrix[start:end] {
+		res, err := r.RunOne(ctx, suite, item.scenario, item.config)
+		if err != nil {
+			return results, fmt.Errorf("run %s x %s: %w", item.scenario.Name, item.config.Name, err)
+		}
+		results = append(results, res)
+	}
+	return results, nil
+}
+
 // RunOne executes a single scenario x config and writes its trace.
 func (r *Runner) RunOne(ctx context.Context, suite *spec.EvalSuite, sc spec.Scenario, cfg spec.RunConfig) (Result, error) {
 	runID := runIDFor(sc.Name, cfg.Name, time.Now().UnixNano())

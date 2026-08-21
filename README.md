@@ -152,6 +152,7 @@ go test ./...
 | `--config` | — | Run only this config name |
 | `--max-steps` | `8` | Max LLM steps per run |
 | `--dry-run` | — | Estimate cost without running the suite |
+| `--slice N/M` | — | Run slice M of N for CI parallelism (e.g., `1/4`) |
 
 ## Roadmap
 
@@ -174,7 +175,7 @@ go test ./...
 - [x] Cross-provider comparison (ADR-018)
 - [x] Judge calibration (ADR-019)
 - [x] Selective runs with cost forecast
-- [ ] Multi-slice CI gate
+- [x] Multi-slice CI gate
 - [ ] HTML dashboard with drill-down
 - [ ] Export to external observability platforms
 

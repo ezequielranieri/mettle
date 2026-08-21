@@ -63,7 +63,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "usage: mettle <run|report|calibrate|version> [flags]")
 	fmt.Fprintln(os.Stderr, "  run       --spec <file.yaml> [--store path] [--traces dir] [--report path] [--html path]")
 	fmt.Fprintln(os.Stderr, "            [--agent demo|llm] [--provider p] [--model m] [--judge-provider p] [--judge-model m]")
-	fmt.Fprintln(os.Stderr, "            [--scenario name] [--config name] [--max-steps n] [--dry-run]")
+	fmt.Fprintln(os.Stderr, "            [--scenario name] [--config name] [--max-steps n] [--dry-run] [--slice N/M]")
 	fmt.Fprintln(os.Stderr, "  report    [--store path] [--suite name] [--report path] [--html path]")
 	fmt.Fprintln(os.Stderr, "  calibrate [--store path]... [--golden path]")
 	fmt.Fprintln(os.Stderr, "  version   print version")
@@ -85,19 +85,20 @@ func cmdRun(args []string) error {
 	configFilter := fs.String("config", "", "run only this config name from the suite")
 	maxSteps := fs.Int("max-steps", agent.DefaultMaxSteps, "max LLM steps per run (--agent llm)")
 	dryRun := fs.Bool("dry-run", false, "estimate cost without running the suite")
+	sliceFlag := fs.String("slice", "", "run slice N of M for CI parallelism (e.g., '1/4')")
 	_ = fs.Parse(args)
 	if *specPath == "" {
 		return fmt.Errorf("--spec is required")
 	}
 	if *dryRun {
-		return runForecast(*specPath, *provider, *model, *judgeProvider, *judgeModel, *scenarioFilter, *configFilter, *maxSteps)
+		return runForecast(*specPath, *provider, *model, *judgeProvider, *judgeModel, *scenarioFilter, *configFilter, *maxSteps, *sliceFlag)
 	}
-	return runPipeline(*specPath, *storePath, *tracesDir, *reportPath, *htmlPath, *agentKind, *provider, *model, *judgeProvider, *judgeModel, *scenarioFilter, *configFilter, *maxSteps)
+	return runPipeline(*specPath, *storePath, *tracesDir, *reportPath, *htmlPath, *agentKind, *provider, *model, *judgeProvider, *judgeModel, *scenarioFilter, *configFilter, *maxSteps, *sliceFlag)
 }
 
 // runForecast estimates cost without running the suite. Useful for budget
 // planning and sanity checks before committing to a large eval run.
-func runForecast(specPath, provider, model, judgeProvider, judgeModel, scenarioFilter, configFilter string, maxSteps int) error {
+func runForecast(specPath, provider, model, judgeProvider, judgeModel, scenarioFilter, configFilter string, maxSteps int, sliceFlag string) error {
 	suite, err := spec.LoadSuite(specPath)
 	if err != nil {
 		return err
@@ -137,6 +138,59 @@ func runForecast(specPath, provider, model, judgeProvider, judgeModel, scenarioF
 		judgeModel = suite.Defaults.Judge.Model
 	}
 
+	// Handle slice flag - calculate slice boundaries
+	if sliceFlag != "" {
+		var sliceNum, totalSlices int
+		if _, err := fmt.Sscanf(sliceFlag, "%d/%d", &sliceNum, &totalSlices); err != nil {
+			return fmt.Errorf("invalid --slice format %q (expected N/M)", sliceFlag)
+		}
+		if sliceNum < 1 || sliceNum > totalSlices {
+			return fmt.Errorf("slice %d/%d: sliceNum must be between 1 and %d", sliceNum, totalSlices, totalSlices)
+		}
+
+		// Count total matrix size
+		totalRuns := len(suite.Scenarios) * len(suite.Configs)
+		if totalRuns == 0 {
+			totalRuns = len(suite.Scenarios) // no configs = default config
+		}
+
+		// Calculate slice boundaries
+		perSlice := totalRuns / totalSlices
+		remainder := totalRuns % totalSlices
+
+		start := (sliceNum - 1) * perSlice
+		end := start + perSlice
+		if sliceNum <= remainder {
+			start += sliceNum - 1
+			end = start + perSlice + 1
+		} else {
+			start += remainder
+			end = start + perSlice
+		}
+		if start >= totalRuns {
+			return fmt.Errorf("slice %d/%d: no runs in this slice", sliceNum, totalSlices)
+		}
+		if end > totalRuns {
+			end = totalRuns
+		}
+
+		// For forecast, we estimate the slice size
+		sliceSize := end - start
+		fullScenarios := len(suite.Scenarios)
+		fullConfigs := len(suite.Configs)
+		if fullConfigs == 0 {
+			fullConfigs = 1
+		}
+		totalMatrix := fullScenarios * fullConfigs
+
+		// Scale scenarios proportionally
+		scaledScenarios := (fullScenarios * sliceSize) / totalMatrix
+		if scaledScenarios == 0 {
+			scaledScenarios = 1
+		}
+		suite.Scenarios = suite.Scenarios[:scaledScenarios]
+	}
+
 	f := metrics.Forecast(metrics.ForecastInput{
 		Suite:      *suite,
 		MaxSteps:   maxSteps,
@@ -152,7 +206,7 @@ func runForecast(specPath, provider, model, judgeProvider, judgeModel, scenarioF
 
 // runPipeline executes the evaluation matrix and enforces the CI gate.
 // It is a separate function so the end-to-end flow is testable.
-func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind, provider, model, judgeProvider, judgeModel, scenarioFilter, configFilter string, maxSteps int) error {
+func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind, provider, model, judgeProvider, judgeModel, scenarioFilter, configFilter string, maxSteps int, sliceFlag string) error {
 	suite, err := spec.LoadSuite(specPath)
 	if err != nil {
 		return err
@@ -200,9 +254,23 @@ func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind
 
 	ctx := context.Background()
 	r := &runner.Runner{Agent: ag, TraceDir: tracesDir}
-	results, err := r.RunSuite(ctx, suite)
-	if err != nil {
-		return err
+
+	// Parse slice flag (e.g., "1/4" means slice 1 of 4)
+	var results []runner.Result
+	if sliceFlag != "" {
+		var sliceNum, totalSlices int
+		if _, err := fmt.Sscanf(sliceFlag, "%d/%d", &sliceNum, &totalSlices); err != nil {
+			return fmt.Errorf("invalid --slice format %q (expected N/M)", sliceFlag)
+		}
+		results, err = r.RunSlice(ctx, suite, sliceNum, totalSlices)
+		if err != nil {
+			return err
+		}
+	} else {
+		results, err = r.RunSuite(ctx, suite)
+		if err != nil {
+			return err
+		}
 	}
 
 	scByName := make(map[string]spec.Scenario, len(suite.Scenarios))

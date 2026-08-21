@@ -47,7 +47,7 @@ configs:
 
 func runOnce(t *testing.T, specPath, storePath, traces, reportPath string) string {
 	t.Helper()
-	if err := runPipeline(specPath, storePath, traces, reportPath, "", "demo", "", "", "", "", "", "", 0); err != nil {
+	if err := runPipeline(specPath, storePath, traces, reportPath, "", "demo", "", "", "", "", "", "", 0, ""); err != nil {
 		t.Fatalf("runPipeline: %v", err)
 	}
 	data, err := os.ReadFile(reportPath)
@@ -107,7 +107,7 @@ configs:
 	traces := filepath.Join(dir, "traces")
 	reportPath := filepath.Join(dir, "report.md")
 
-	if err := runPipeline(specPath, storePath, traces, reportPath, "", "demo", "", "", "", "", "demo-scenario", "", 0); err != nil {
+	if err := runPipeline(specPath, storePath, traces, reportPath, "", "demo", "", "", "", "", "demo-scenario", "", 0, ""); err != nil {
 		t.Fatalf("runPipeline with scenario filter: %v", err)
 	}
 	md, err := os.ReadFile(reportPath)
@@ -122,7 +122,7 @@ configs:
 	}
 
 	// Unknown scenario is an error, never an empty silent run.
-	if err := runPipeline(specPath, storePath, traces, reportPath, "", "demo", "", "", "", "", "nope", "", 0); err == nil || !strings.Contains(err.Error(), "not found") {
+	if err := runPipeline(specPath, storePath, traces, reportPath, "", "demo", "", "", "", "", "nope", "", 0, ""); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("unknown scenario err = %v, want not found", err)
 	}
 }
@@ -242,7 +242,7 @@ func TestPipelineSecurityScenariosDemoPass(t *testing.T) {
 		traces := filepath.Join(dir, "traces")
 		reportPath := filepath.Join(dir, "report.md")
 
-		if err := runPipeline(specPath, storePath, traces, reportPath, "", "demo", "", "", "", "", sc, "", 0); err != nil {
+		if err := runPipeline(specPath, storePath, traces, reportPath, "", "demo", "", "", "", "", sc, "", 0, ""); err != nil {
 			t.Fatalf("runPipeline(%s): %v", sc, err)
 		}
 		md, err := os.ReadFile(reportPath)
