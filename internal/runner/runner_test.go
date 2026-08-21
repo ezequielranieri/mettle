@@ -393,3 +393,90 @@ func TestTraceFilesArePerRun(t *testing.T) {
 		t.Errorf("trace files = %d, want 6 (3 scenarios x 2 configs)", len(seen))
 	}
 }
+
+func TestRunSliceEdgeCases(t *testing.T) {
+	suite := loadExample(t)
+	traceDir := t.TempDir()
+	agent := &mockAgent{reply: "ok"}
+	r := &Runner{Agent: agent, TraceDir: traceDir}
+
+	tests := []struct {
+		name      string
+		sliceNum  int
+		totalSlices int
+		wantErr   bool
+		wantNil   bool
+	}{
+		{"valid slice 1/2", 1, 2, false, false},
+		{"valid slice 2/2", 2, 2, false, false},
+		{"sliceNum 0", 0, 2, true, false},
+		{"sliceNum negative", -1, 2, true, false},
+		{"totalSlices 0", 1, 0, true, false},
+		{"totalSlices negative", 1, -1, true, false},
+		{"sliceNum > totalSlices", 3, 2, true, false},
+		{"single slice", 1, 1, false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results, err := r.RunSlice(context.Background(), suite, tt.sliceNum, tt.totalSlices)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("RunSlice() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantNil && results != nil {
+				t.Errorf("RunSlice() = %v, want nil", results)
+			}
+		})
+	}
+}
+
+func TestRunSliceEmptySuite(t *testing.T) {
+	suite := &spec.EvalSuite{
+		Name:      "empty",
+		Version:   "1",
+		Scenarios: []spec.Scenario{},
+	}
+	r := &Runner{Agent: &mockAgent{reply: "ok"}, TraceDir: t.TempDir()}
+
+	results, err := r.RunSlice(context.Background(), suite, 1, 2)
+	if err != nil {
+		t.Errorf("RunSlice() error = %v, want nil", err)
+	}
+	if results != nil {
+		t.Errorf("RunSlice() = %v, want nil for empty suite", results)
+	}
+}
+
+func TestRunSliceDistribution(t *testing.T) {
+	suite := loadExample(t)
+	traceDir := t.TempDir()
+	agent := &mockAgent{reply: "ok"}
+	r := &Runner{Agent: agent, TraceDir: traceDir}
+
+	// 3 scenarios x 2 configs = 6 total runs
+	// Slice 1/3 should get 2 runs, slice 2/3 should get 2, slice 3/3 should get 2
+	var allResults []Result
+	for i := 1; i <= 3; i++ {
+		results, err := r.RunSlice(context.Background(), suite, i, 3)
+		if err != nil {
+			t.Fatalf("RunSlice(%d/3) error: %v", i, err)
+		}
+		if len(results) != 2 {
+			t.Errorf("RunSlice(%d/3) got %d results, want 2", i, len(results))
+		}
+		allResults = append(allResults, results...)
+	}
+
+	// Verify no duplicate run IDs
+	seen := map[string]bool{}
+	for _, res := range allResults {
+		if seen[res.RunID] {
+			t.Errorf("duplicate run ID: %s", res.RunID)
+		}
+		seen[res.RunID] = true
+	}
+	if len(seen) != 6 {
+		t.Errorf("total unique runs = %d, want 6", len(seen))
+	}
+}

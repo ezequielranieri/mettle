@@ -80,8 +80,15 @@ func (r *Runner) RunSuite(ctx context.Context, suite *spec.EvalSuite) ([]Result,
 // sliceNum is 1-indexed, totalSlices is the total number of slices.
 // Example: sliceNum=1, totalSlices=4 runs the first quarter of scenarios.
 func (r *Runner) RunSlice(ctx context.Context, suite *spec.EvalSuite, sliceNum, totalSlices int) ([]Result, error) {
-	if sliceNum < 1 || sliceNum > totalSlices {
-		return nil, fmt.Errorf("slice %d/%d: sliceNum must be between 1 and %d", sliceNum, totalSlices, totalSlices)
+	// Validate slice parameters
+	if totalSlices < 1 {
+		return nil, fmt.Errorf("slice: totalSlices must be at least 1, got %d", totalSlices)
+	}
+	if sliceNum < 1 {
+		return nil, fmt.Errorf("slice: sliceNum must be at least 1, got %d", sliceNum)
+	}
+	if sliceNum > totalSlices {
+		return nil, fmt.Errorf("slice %d/%d: sliceNum must be <= totalSlices (%d)", sliceNum, totalSlices, totalSlices)
 	}
 
 	// Flatten the matrix
@@ -96,8 +103,13 @@ func (r *Runner) RunSlice(ctx context.Context, suite *spec.EvalSuite, sliceNum, 
 		}
 	}
 
-	// Calculate slice boundaries
+	// Handle empty matrix
 	total := len(matrix)
+	if total == 0 {
+		return nil, nil // no work to do
+	}
+
+	// Calculate slice boundaries
 	perSlice := total / totalSlices
 	remainder := total % totalSlices
 
