@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 
 	"mettle/internal/agent"
+	"mettle/internal/export"
 	"mettle/internal/judge"
 	"mettle/internal/metrics"
 	"mettle/internal/report"
@@ -47,6 +48,8 @@ func main() {
 		err = cmdReport(os.Args[2:])
 	case "dashboard":
 		err = cmdDashboard(os.Args[2:])
+	case "export":
+		err = cmdExport(os.Args[2:])
 	case "calibrate":
 		err = cmdCalibrate(os.Args[2:])
 	case "version":
@@ -62,12 +65,13 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: mettle <run|report|dashboard|calibrate|version> [flags]")
+	fmt.Fprintln(os.Stderr, "usage: mettle <run|report|dashboard|export|calibrate|version> [flags]")
 	fmt.Fprintln(os.Stderr, "  run       --spec <file.yaml> [--store path] [--traces dir] [--report path] [--html path]")
 	fmt.Fprintln(os.Stderr, "            [--agent demo|llm] [--provider p] [--model m] [--judge-provider p] [--judge-model m]")
 	fmt.Fprintln(os.Stderr, "            [--scenario name] [--config name] [--max-steps n] [--dry-run] [--slice N/M]")
 	fmt.Fprintln(os.Stderr, "  report    [--store path] [--suite name] [--report path] [--html path]")
 	fmt.Fprintln(os.Stderr, "  dashboard [--store path] [--suite name] [--output path]")
+	fmt.Fprintln(os.Stderr, "  export    --platform langsmith|braintrust|json [--store path] [--suite name] [--endpoint path]")
 	fmt.Fprintln(os.Stderr, "  calibrate [--store path]... [--golden path]")
 	fmt.Fprintln(os.Stderr, "  version   print version")
 }
@@ -523,6 +527,64 @@ func cmdDashboard(args []string) error {
 	}
 	fmt.Printf("Dashboard written to %s\n", *outputPath)
 	return nil
+}
+
+func cmdExport(args []string) error {
+	fs := flag.NewFlagSet("export", flag.ExitOnError)
+	storePath := fs.String("store", defaultStore, "SQLite regression store")
+	suiteName := fs.String("suite", "", "filter by suite name (default: all)")
+	platform := fs.String("platform", "", "export platform: langsmith | braintrust | json (required)")
+	endpoint := fs.String("endpoint", "", "API endpoint or output path for json")
+	_ = fs.Parse(args)
+
+	if *platform == "" {
+		return fmt.Errorf("--platform is required (langsmith|braintrust|json)")
+	}
+
+	st, err := store.Open(*storePath)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	ctx := context.Background()
+	runs, err := st.ListRuns(ctx, *suiteName)
+	if err != nil {
+		return err
+	}
+
+	if len(runs) == 0 {
+		fmt.Println("No runs to export")
+		return nil
+	}
+
+	cfg := export.Config{
+		APIKey:   os.Getenv("LANGCHAIN_API_KEY"),
+		Endpoint: *endpoint,
+		Project:  *suiteName,
+	}
+
+	// Set platform-specific defaults from environment
+	switch *platform {
+	case "langsmith":
+		if cfg.APIKey == "" {
+			cfg.APIKey = os.Getenv("LANGSMITH_API_KEY")
+		}
+		if cfg.Endpoint == "" {
+			cfg.Endpoint = os.Getenv("LANGCHAIN_ENDPOINT")
+		}
+	case "braintrust":
+		if cfg.APIKey == "" {
+			cfg.APIKey = os.Getenv("BRAINTRUST_API_KEY")
+		}
+	}
+
+	exp, err := export.New(*platform, cfg)
+	if err != nil {
+		return err
+	}
+
+	return exp.Export(ctx, runs)
 }
 
 // buildAgent constructs the agent under test. demo is deterministic (CI

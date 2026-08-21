@@ -38,6 +38,7 @@ internal/
   store/            SQLite regression store (runs, findings, metric scores)
   trace/            JSONL append-only event log
   report/           Markdown + HTML report generation + interactive dashboard
+  export/           External observability platform adapters (LangSmith, Braintrust)
   sandbox/          Tool proxy (controlled responses, per-tenant branching)
 examples/
   scenarios/        Evaluation corpus (empty-states, security, protocols, adversarial)
@@ -177,7 +178,7 @@ go test ./...
 - [x] Selective runs with cost forecast
 - [x] Multi-slice CI gate
 - [x] HTML dashboard with drill-down
-- [ ] Export to external observability platforms
+- [x] Export to external observability platforms
 
 ## License
 
