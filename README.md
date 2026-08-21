@@ -8,7 +8,26 @@ visibility checks (fail-closed with logging), deterministic and LLM-judged
 metrics, a regression store, and CI gates. Built in Go.
 
 See [DECISIONS.md](DECISIONS.md) for the full architecture decision record
-(ADR-001..015, Spanish).
+(ADR-001..019, Spanish).
+
+## Architecture
+
+```
+cmd/mettle          CLI entry point (run, report, calibrate)
+internal/
+  spec/             YAML spec parser + JSON Schema validation
+  runner/           Scenario × config matrix executor
+  agent/            Demo (deterministic) + LLM (JSON-instructive tool calls)
+  judge/            LLM-as-judge client (OpenAI-compatible, multi-provider)
+  metrics/          Deterministic + semantic metric computation
+  store/            SQLite regression store (runs, findings, metric scores)
+  trace/            JSONL append-only event log
+  report/           Markdown + HTML report generation
+  sandbox/          Tool proxy (controlled responses, per-tenant branching)
+examples/
+  scenarios/        Evaluation corpus (empty-states, security, protocols, adversarial)
+  golden/           Calibration ground truth
+```
 
 ## Status
 
