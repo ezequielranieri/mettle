@@ -431,6 +431,45 @@ func TestRunSliceEdgeCases(t *testing.T) {
 	}
 }
 
+func TestEmptyStatesDistinguish(t *testing.T) {
+	// ADR-006: empty_states: distinguish requires the agent to tell apart
+	// "record doesn't exist" from "record exists but has no data".
+	suite, err := spec.LoadSuite("../../examples/scenarios/empty-states.yaml")
+	if err != nil {
+		t.Fatalf("LoadSuite: %v", err)
+	}
+
+	distinguishFound := false
+	for _, sc := range suite.Scenarios {
+		if sc.Expect.EmptyStates == "distinguish" {
+			distinguishFound = true
+
+			// Scenario must have fixtures that define the two distinct states
+			if _, ok := sc.Fixtures["lookup_record"]; !ok {
+				t.Errorf("scenario %q: empty_states=distinguish but no lookup_record fixture", sc.Name)
+			}
+		}
+	}
+	if !distinguishFound {
+		t.Error("no scenario with empty_states=distinguish found in empty-states.yaml")
+	}
+}
+
+func TestConflictResolutionExplicit(t *testing.T) {
+	// ADR-007: conflict_resolution must be declared per scenario, not emergent.
+	suite, err := spec.LoadSuite("../../examples/scenarios/empty-states.yaml")
+	if err != nil {
+		t.Fatalf("LoadSuite: %v", err)
+	}
+
+	for _, sc := range suite.Scenarios {
+		if sc.Expect.Conflict != "" && sc.Expect.Visibility != "required" {
+			t.Errorf("scenario %q: conflict_resolution=%q but visibility=%q (must be required)",
+				sc.Name, sc.Expect.Conflict, sc.Expect.Visibility)
+		}
+	}
+}
+
 func TestRunSliceEmptySuite(t *testing.T) {
 	suite := &spec.EvalSuite{
 		Name:      "empty",
