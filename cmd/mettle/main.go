@@ -31,6 +31,9 @@ const (
 	defaultReport = "report.md"
 )
 
+// version is set at build time via -ldflags.
+var version = "dev"
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -44,6 +47,8 @@ func main() {
 		err = cmdReport(os.Args[2:])
 	case "calibrate":
 		err = cmdCalibrate(os.Args[2:])
+	case "version":
+		fmt.Printf("mettle %s\n", version)
 	default:
 		usage()
 		os.Exit(2)
@@ -55,12 +60,13 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: mettle <run|report|calibrate> [flags]")
+	fmt.Fprintln(os.Stderr, "usage: mettle <run|report|calibrate|version> [flags]")
 	fmt.Fprintln(os.Stderr, "  run       --spec <file.yaml> [--store path] [--traces dir] [--report path] [--html path]")
 	fmt.Fprintln(os.Stderr, "            [--agent demo|llm] [--provider p] [--model m] [--judge-provider p] [--judge-model m]")
 	fmt.Fprintln(os.Stderr, "            [--scenario name] [--config name] [--max-steps n]")
 	fmt.Fprintln(os.Stderr, "  report    [--store path] [--suite name] [--report path] [--html path]")
 	fmt.Fprintln(os.Stderr, "  calibrate [--store path]... [--golden path]")
+	fmt.Fprintln(os.Stderr, "  version   print version")
 }
 
 func cmdRun(args []string) error {
