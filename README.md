@@ -37,7 +37,7 @@ internal/
   metrics/          Deterministic + semantic metric computation
   store/            SQLite regression store (runs, findings, metric scores)
   trace/            JSONL append-only event log
-  report/           Markdown + HTML report generation
+  report/           Markdown + HTML report generation + interactive dashboard
   sandbox/          Tool proxy (controlled responses, per-tenant branching)
 examples/
   scenarios/        Evaluation corpus (empty-states, security, protocols, adversarial)
@@ -176,7 +176,7 @@ go test ./...
 - [x] Judge calibration (ADR-019)
 - [x] Selective runs with cost forecast
 - [x] Multi-slice CI gate
-- [ ] HTML dashboard with drill-down
+- [x] HTML dashboard with drill-down
 - [ ] Export to external observability platforms
 
 ## License

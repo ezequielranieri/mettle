@@ -45,6 +45,8 @@ func main() {
 		err = cmdRun(os.Args[2:])
 	case "report":
 		err = cmdReport(os.Args[2:])
+	case "dashboard":
+		err = cmdDashboard(os.Args[2:])
 	case "calibrate":
 		err = cmdCalibrate(os.Args[2:])
 	case "version":
@@ -60,11 +62,12 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: mettle <run|report|calibrate|version> [flags]")
+	fmt.Fprintln(os.Stderr, "usage: mettle <run|report|dashboard|calibrate|version> [flags]")
 	fmt.Fprintln(os.Stderr, "  run       --spec <file.yaml> [--store path] [--traces dir] [--report path] [--html path]")
 	fmt.Fprintln(os.Stderr, "            [--agent demo|llm] [--provider p] [--model m] [--judge-provider p] [--judge-model m]")
 	fmt.Fprintln(os.Stderr, "            [--scenario name] [--config name] [--max-steps n] [--dry-run] [--slice N/M]")
 	fmt.Fprintln(os.Stderr, "  report    [--store path] [--suite name] [--report path] [--html path]")
+	fmt.Fprintln(os.Stderr, "  dashboard [--store path] [--suite name] [--output path]")
 	fmt.Fprintln(os.Stderr, "  calibrate [--store path]... [--golden path]")
 	fmt.Fprintln(os.Stderr, "  version   print version")
 }
@@ -476,6 +479,49 @@ func cmdReport(args []string) error {
 			return fmt.Errorf("write html report: %w", err)
 		}
 	}
+	return nil
+}
+
+func cmdDashboard(args []string) error {
+	fs := flag.NewFlagSet("dashboard", flag.ExitOnError)
+	storePath := fs.String("store", defaultStore, "SQLite regression store")
+	suiteName := fs.String("suite", "", "filter by suite name (default: all)")
+	outputPath := fs.String("output", "dashboard.html", "dashboard HTML output")
+	_ = fs.Parse(args)
+
+	st, err := store.Open(*storePath)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	ctx := context.Background()
+	runs, err := st.ListRuns(ctx, *suiteName)
+	if err != nil {
+		return err
+	}
+	regs, err := st.CompareSuite(ctx, *suiteName)
+	if err != nil {
+		return err
+	}
+
+	title := *suiteName
+	if title == "" {
+		title = "all suites"
+	}
+
+	h, err := report.Dashboard(title, runs, regs)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(*outputPath), 0o755); err != nil {
+		return fmt.Errorf("create dashboard dir: %w", err)
+	}
+	if err := os.WriteFile(*outputPath, []byte(h), 0o644); err != nil {
+		return fmt.Errorf("write dashboard: %w", err)
+	}
+	fmt.Printf("Dashboard written to %s\n", *outputPath)
 	return nil
 }
 
