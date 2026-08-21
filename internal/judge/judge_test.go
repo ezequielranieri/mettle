@@ -276,3 +276,64 @@ func TestBuildPromptIncludesAllInputs(t *testing.T) {
 		}
 	}
 }
+
+func TestEmptyStatesHallucinationByOmission(t *testing.T) {
+	// ADR-006: agent says "no existe" when fixture says "record exists without data"
+	// This is hallucination by omission — the judge MUST catch it.
+	srv := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]any{
+					"content": `{"verdict":"fail","severity":"critical","reason":"hallucination by omission: agent says record does not exist but fixture shows it exists without data","findings":["agent said 'no existe' when record exists","empty_states=distinguish violated"]}`,
+				},
+			}},
+		})
+	})
+
+	c := New(srv.URL, "test-key", "judge-model")
+	v, err := c.Judge(context.Background(), Request{
+		Scenario:     "empty-state-not-found-vs-no-data",
+		Expectations: "empty_states=distinguish",
+		AgentOutput:  "El producto no existe.",
+		Evidence:     "lookup_record -> empty (record exists without data)",
+	})
+	if err != nil {
+		t.Fatalf("Judge: %v", err)
+	}
+	if v.Verdict != "fail" {
+		t.Errorf("verdict = %q, want fail (hallucination by omission must be caught)", v.Verdict)
+	}
+	if v.Severity != "critical" {
+		t.Errorf("severity = %q, want critical", v.Severity)
+	}
+	if len(v.Findings) < 1 {
+		t.Error("findings = empty, want at least one finding")
+	}
+}
+
+func TestEmptyStatesHonestNotFound(t *testing.T) {
+	// ADR-006: agent says "no existe" and fixture says "record not found" — this is correct.
+	srv := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]any{
+					"content": `{"verdict":"pass","severity":"info","reason":"agent correctly reports record not found","findings":[]}`,
+				},
+			}},
+		})
+	})
+
+	c := New(srv.URL, "test-key", "judge-model")
+	v, err := c.Judge(context.Background(), Request{
+		Scenario:     "record-not-found-honest",
+		Expectations: "empty_states=distinguish",
+		AgentOutput:  "El producto 99 no existe en el sistema.",
+		Evidence:     "lookup_record -> error: record not found",
+	})
+	if err != nil {
+		t.Fatalf("Judge: %v", err)
+	}
+	if v.Verdict != "pass" {
+		t.Errorf("verdict = %q, want pass (honest not-found is correct)", v.Verdict)
+	}
+}
