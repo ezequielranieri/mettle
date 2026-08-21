@@ -492,14 +492,90 @@ compound-mini agent+nemotron judge, nemotron agent+judge), 1 control.
 scale. We accept this because automated calibration against a known ground
 truth is circular.
 
+## ADR-020 · Cost forecast with --dry-run
+
+**Status:** accepted · **Scope:** CLI, metrics package
+
+**Decision:** add a `--dry-run` flag that estimates cost before running the
+suite, without executing any LLM calls.
+
+**Why:** LLM eval suites consume tokens. A cost forecast lets developers
+budget before committing to a run, avoiding surprise bills on large matrices
+(scenarios × configs). The estimate is based on system prompt length, input
+size, max steps, and model pricing rates.
+
+**Implementation:** `metrics.Forecast()` estimates tokens from spec text,
+applies model rates from `modelRates`, and returns a breakdown per
+scenario+config. The `--dry-run` flag calls Forecast and exits.
+
+**Trade-off:** the estimate is approximate (doesn't account for real
+prompt construction or retry behavior). We accept this because exact
+estimation would require running the suite first, defeating the purpose.
+
+## ADR-021 · Multi-slice CI gate with --slice
+
+**Status:** accepted · **Scope:** runner, CLI
+
+**Decision:** add a `--slice N/M` flag that runs only slice M of N from
+the scenario × config matrix.
+
+**Why:** large eval suites (20+ scenarios) are slow in CI. Splitting into
+parallel slices across multiple CI jobs reduces wall-clock time. Each slice
+writes to the same SQLite store; a final gate job validates all results.
+
+**Implementation:** `runner.RunSlice()` flattens the matrix, calculates
+boundaries (distributing remainder to first slices), and runs only the
+assigned portion. The store is append-only, so slices can write
+concurrently without conflicts.
+
+**Trade-off:** slices add CI complexity (matrix strategy, aggregation
+step). We accept this because the alternative (running everything
+sequentially) doesn't scale for large corpora.
+
+## ADR-022 · Interactive HTML dashboard with drill-down
+
+**Status:** accepted · **Scope:** report package
+
+**Decision:** add a `mettle dashboard` command that generates a
+self-contained HTML page with filtering, sorting, and drill-down.
+
+**Why:** markdown reports are good for diffs/chat, but developers need
+interactive exploration when debugging failing runs. A dashboard with
+filters (scenario, outcome, pass/fail), sortable columns, and click-to-
+drill-down speeds up root cause analysis.
+
+**Implementation:** single HTML file with inline CSS/JS, no external
+dependencies. Uses `prefers-color-scheme` for dark mode. Data is embedded
+as JSON; JavaScript handles filtering/sorting client-side.
+
+**Trade-off:** the dashboard is not a web server (no live updates,
+no authentication). We accept this because a static file is easier to
+share, cache, and version-control than a running service.
+
+## ADR-023 · Export to external observability platforms
+
+**Status:** accepted · **Scope:** export package, CLI
+
+**Decision:** add a `mettle export` command with adapters for LangSmith,
+Braintrust, and JSON file export.
+
+**Why:** teams use observability platforms (LangSmith, Braintrust) to
+aggregate eval results across projects. Export enables integration without
+locking into a single vendor. JSON export supports manual import and
+debugging.
+
+**Implementation:** `export.Exporter` interface with three adapters.
+LangSmith uses `/runs/batch`, Braintrust uses `/v1/project/logs`, JSON
+writes to a file. API keys come from environment variables
+(`LANGCHAIN_API_KEY`, `BRAINTRUST_API_KEY`).
+
+**Trade-off:** adapters are simple HTTP clients, not full SDKs. We don't
+handle pagination, retries, or idempotency. We accept this because eval
+suites are small (hundreds of runs, not millions) and one-shot export
+is sufficient.
+
 ## Non-decisions (explicitly deferred)
 
-- **Multi-slice CI gate** — the current single-gate model is sufficient for
-  early development; slicing is future work when suites grow.
-- **HTML dashboard with drill-down** — current markdown/HTML reports are
-  enough; a interactive dashboard is future work.
-- **Export to external observability platforms** — LangSmith/Braintrust
-  integration is optional and deferred.
 - **Conversation persistence** — traces are append-only JSONL; a queryable
   trace store is future work.
 

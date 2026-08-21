@@ -499,15 +499,93 @@ compound-mini agente+nemotron judge, nemotron agente+judge), 1 control.
 escala. Lo aceptamos porque la calibración automática contra un ground truth
 conocido es circular.
 
+## ADR-020 — Cost forecast con --dry-run
+
+**Estado:** aceptado · **Alcance:** CLI, paquete metrics
+
+**Decisión:** agregar un flag `--dry-run` que estima el costo antes de correr
+el suite, sin ejecutar ninguna llamada LLM.
+
+**Por qué:** los eval suites de LLM consumen tokens. Un forecast de costo
+permite a los desarrolladores presupuestar antes de comprometerse con un run,
+evitando sorpresas en matrices grandes (escenarios × configs). La estimación
+se basa en la longitud del system prompt, el tamaño del input, max steps,
+y las tarifas del modelo.
+
+**Implementación:** `metrics.Forecast()` estima tokens del texto del spec,
+aplica tarifas del modelo desde `modelRates`, y retorna un desglose por
+scenario+config. El flag `--dry-run` llama a Forecast y sale.
+
+**Trade-off:** la estimación es aproximada (no considera la construcción
+real del prompt ni reintentos). Lo aceptamos porque la estimación exacta
+requeriría correr el suite primero, lo que anula el propósito.
+
+## ADR-021 — Gate de CI multi-slice con --slice
+
+**Estado:** aceptado · **Alcance:** runner, CLI
+
+**Decisión:** agregar un flag `--slice N/M` que corre solo el slice M de N
+de la matriz scenario × config.
+
+**Por qué:** los eval suites grandes (20+ escenarios) son lentos en CI.
+Dividirlos en slices paralelos en múltiples jobs reduce el tiempo de reloj.
+Cada slice escribe al mismo store SQLite; un job final de gate valida todos
+los resultados.
+
+**Implementación:** `runner.RunSlice()` aplana la matriz, calcula límites
+(distribuyendo el remainder a los primeros slices), y corre solo la porción
+asignada. El store es append-only, así que los slices pueden escribir
+concurrentemente sin conflictos.
+
+**Trade-off:** los slices agregan complejidad al CI (matrix strategy,
+paso de agregación). Lo aceptamos porque la alternativa (correr todo
+secuencialmente) no escala para corpus grandes.
+
+## ADR-022 — Dashboard HTML interactivo con drill-down
+
+**Estado:** aceptado · **Alcance:** paquete report
+
+**Decisión:** agregar un comando `mettle dashboard` que genera una página
+HTML auto-contenida con filtrado, ordenamiento y drill-down.
+
+**Por qué:** los reportes markdown son buenos para diffs/chat, pero los
+desarrolladores necesitan exploración interactiva cuando depuran runs
+fallidos. Un dashboard con filtros (scenario, outcome, pass/fail), columnas
+ordenables, y click-to-drill-down acelera el análisis de causa raíz.
+
+**Implementación:** un solo archivo HTML con CSS/JS inline, sin dependencias
+externas. Usa `prefers-color-scheme` para modo oscuro. Los datos se
+embeben como JSON; JavaScript maneja filtrado/ordenamiento del lado
+del cliente.
+
+**Trade-off:** el dashboard no es un servidor web (sin actualizaciones
+en vivo, sin autenticación). Lo aceptamos porque un archivo estático
+es más fácil de compartir, cachear y versionar que un servicio corriendo.
+
+## ADR-023 — Export a plataformas de observabilidad externas
+
+**Estado:** aceptado · **Alcance:** paquete export, CLI
+
+**Decisión:** agregar un comando `mettle export` con adaptadores para
+LangSmith, Braintrust y export a JSON.
+
+**Por qué:** los equipos usan plataformas de observabilidad (LangSmith,
+Braintrust) para agregar resultados de eval entre proyectos. El export
+permite integración sin vendor lock-in. El export JSON soporta import
+manual y debugging.
+
+**Implementación:** interfaz `export.Exporter` con tres adaptadores.
+LangSmith usa `/runs/batch`, Braintrust usa `/v1/project/logs`, JSON
+escribe a un archivo. Las API keys vienen de variables de entorno
+(`LANGCHAIN_API_KEY`, `BRAINTRUST_API_KEY`).
+
+**Trade-off:** los adaptadores son clientes HTTP simples, no SDKs
+completos. No manejamos paginación, reintentos ni idempotency. Lo
+aceptamos porque los eval suites son pequeños (cientos de runs, no
+millones) y el export one-shot es suficiente.
+
 ## No-decisiones (explícitamente diferidas)
 
-- **Gate de CI multi-slice** — el modelo de gate single actual es suficiente
-  para desarrollo temprano; el slicing es trabajo futuro cuando las suites
-  crezcan.
-- **Dashboard HTML con drill-down** — los reportes markdown/HTML actuales son
-  suficientes; un dashboard interactivo es trabajo futuro.
-- **Export a plataformas de observabilidad externas** — la integración
-  LangSmith/Braintrust es opcional y diferida.
 - **Persistencia de conversación** — los traces son JSONL append-only; un
   trace store queryable es trabajo futuro.
 
