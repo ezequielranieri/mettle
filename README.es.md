@@ -153,6 +153,7 @@ go test ./...
 | `--scenario` | — | Correr solo este scenario name |
 | `--config` | — | Correr solo este config name |
 | `--max-steps` | `8` | Max steps de LLM por run |
+| `--dry-run` | — | Estimar costo sin correr el suite |
 
 ## Roadmap
 
@@ -174,7 +175,7 @@ go test ./...
 - [x] Corpus adversarial (ADR-017)
 - [x] Comparación cross-provider (ADR-018)
 - [x] Calibración del judge (ADR-019)
-- [ ] Selective runs con cost forecast
+- [x] Selective runs con cost forecast
 - [ ] Gate de CI multi-slice
 - [ ] Dashboard HTML con drill-down
 - [ ] Export a plataformas de observabilidad externas

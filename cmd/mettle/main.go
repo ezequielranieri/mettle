@@ -63,7 +63,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "usage: mettle <run|report|calibrate|version> [flags]")
 	fmt.Fprintln(os.Stderr, "  run       --spec <file.yaml> [--store path] [--traces dir] [--report path] [--html path]")
 	fmt.Fprintln(os.Stderr, "            [--agent demo|llm] [--provider p] [--model m] [--judge-provider p] [--judge-model m]")
-	fmt.Fprintln(os.Stderr, "            [--scenario name] [--config name] [--max-steps n]")
+	fmt.Fprintln(os.Stderr, "            [--scenario name] [--config name] [--max-steps n] [--dry-run]")
 	fmt.Fprintln(os.Stderr, "  report    [--store path] [--suite name] [--report path] [--html path]")
 	fmt.Fprintln(os.Stderr, "  calibrate [--store path]... [--golden path]")
 	fmt.Fprintln(os.Stderr, "  version   print version")
@@ -84,11 +84,70 @@ func cmdRun(args []string) error {
 	scenarioFilter := fs.String("scenario", "", "run only this scenario name from the suite")
 	configFilter := fs.String("config", "", "run only this config name from the suite")
 	maxSteps := fs.Int("max-steps", agent.DefaultMaxSteps, "max LLM steps per run (--agent llm)")
+	dryRun := fs.Bool("dry-run", false, "estimate cost without running the suite")
 	_ = fs.Parse(args)
 	if *specPath == "" {
 		return fmt.Errorf("--spec is required")
 	}
+	if *dryRun {
+		return runForecast(*specPath, *provider, *model, *judgeProvider, *judgeModel, *scenarioFilter, *configFilter, *maxSteps)
+	}
 	return runPipeline(*specPath, *storePath, *tracesDir, *reportPath, *htmlPath, *agentKind, *provider, *model, *judgeProvider, *judgeModel, *scenarioFilter, *configFilter, *maxSteps)
+}
+
+// runForecast estimates cost without running the suite. Useful for budget
+// planning and sanity checks before committing to a large eval run.
+func runForecast(specPath, provider, model, judgeProvider, judgeModel, scenarioFilter, configFilter string, maxSteps int) error {
+	suite, err := spec.LoadSuite(specPath)
+	if err != nil {
+		return err
+	}
+
+	// Apply filters
+	if scenarioFilter != "" {
+		var kept []spec.Scenario
+		for _, sc := range suite.Scenarios {
+			if sc.Name == scenarioFilter {
+				kept = append(kept, sc)
+			}
+		}
+		if len(kept) == 0 {
+			return fmt.Errorf("scenario %q not found in suite %s", scenarioFilter, suite.Name)
+		}
+		suite.Scenarios = kept
+	}
+	if configFilter != "" {
+		var kept []spec.RunConfig
+		for _, cfg := range suite.Configs {
+			if cfg.Name == configFilter {
+				kept = append(kept, cfg)
+			}
+		}
+		if len(kept) == 0 {
+			return fmt.Errorf("config %q not found in suite %s", configFilter, suite.Name)
+		}
+		suite.Configs = kept
+	}
+
+	// Resolve models
+	if provider != "" && model == "" {
+		model = suite.Defaults.Agent.Model
+	}
+	if judgeProvider != "" && judgeModel == "" {
+		judgeModel = suite.Defaults.Judge.Model
+	}
+
+	f := metrics.Forecast(metrics.ForecastInput{
+		Suite:      *suite,
+		MaxSteps:   maxSteps,
+		Scenario:   scenarioFilter,
+		Config:     configFilter,
+		JudgeModel: judgeModel,
+		AgentModel: model,
+	})
+
+	fmt.Print(metrics.FormatForecast(f))
+	return nil
 }
 
 // runPipeline executes the evaluation matrix and enforces the CI gate.
