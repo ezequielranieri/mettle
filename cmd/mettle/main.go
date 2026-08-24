@@ -313,7 +313,7 @@ func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind
 			return err
 		}
 		mres, err := metrics.Compute(metrics.Input{
-			RunID: res.RunID, Scenario: sc, Config: cfg.Name, Budget: cfg.Budget, Events: evs,
+			RunID: res.RunID, Scenario: sc, Config: cfg.Name, Budget: cfg.Budget, Events: evs, Metrics: suite.Metrics,
 		})
 		if err != nil {
 			return err
@@ -330,7 +330,7 @@ func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind
 		}
 		if semantic != nil && mres.Outcome == "pass" {
 			v, judgeErr := semantic.Judge(ctx, judge.BuildRequest(sc, evs))
-			applyVerdict(&mres, v, judgeErr)
+			applyVerdict(&mres, sc, v, judgeErr)
 		}
 		outcomes = append(outcomes, mres.Outcome)
 		passes = append(passes, mres.Pass)
@@ -352,7 +352,13 @@ func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind
 		return err
 	}
 
-	md := report.Markdown(suite.Name, runs, regs)
+	// Build weights map from suite-declared metrics (METR-4)
+	weights := make(map[string]float64, len(suite.Metrics))
+	for _, m := range suite.Metrics {
+		weights[m.Name] = m.Weight
+	}
+
+	md := report.Markdown(suite.Name, runs, regs, weights)
 	if reportPath != "" {
 		if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
 			return fmt.Errorf("create report dir: %w", err)
@@ -363,7 +369,7 @@ func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind
 	}
 	fmt.Print(md)
 	if htmlPath != "" {
-		h, err := report.HTML(suite.Name, runs, regs)
+		h, err := report.HTML(suite.Name, runs, regs, weights)
 		if err != nil {
 			return err
 		}
@@ -390,19 +396,24 @@ func runPipeline(specPath, storePath, tracesDir, reportPath, htmlPath, agentKind
 // applyVerdict folds a semantic judgment into the run result. A judge that
 // cannot produce a verdict is a critical finding, never a silent pass
 // (ADR-006). verdict "fail" fails the run; "warning" is a warning; a clean
-// "pass" adds nothing.
-func applyVerdict(mres *metrics.Result, v judge.Verdict, judgeErr error) {
+// "pass" adds nothing. Also folds judge-driven metrics via AttributeJudge
+// (METR-2): semantic_fail → judge metrics computed=1; clean pass → computed=0.
+func applyVerdict(mres *metrics.Result, sc spec.Scenario, v judge.Verdict, judgeErr error) {
+	violation := false
 	if judgeErr != nil {
 		mres.Findings = append(mres.Findings, metrics.Finding{
 			Severity: metrics.SeverityCritical,
 			Code:     "judge_error",
 			Message:  fmt.Sprintf("semantic judgment failed: %v", judgeErr),
 		})
+		// Judge error: do NOT fold judge metrics (no verdict to attribute)
+		// They remain not_computed — honest about the failure to judge.
 		mres.Pass = metrics.PassFromFindings(mres.Findings)
 		return
 	}
 	switch v.Verdict {
 	case "fail":
+		violation = true // semantic_fail attributes to judge-driven metrics
 		mres.Findings = append(mres.Findings, metrics.Finding{
 			Severity: metrics.SeverityCritical,
 			Code:     "semantic_fail",
@@ -422,6 +433,8 @@ func applyVerdict(mres *metrics.Result, v judge.Verdict, judgeErr error) {
 			Message:  f,
 		})
 	}
+	// Fold judge-driven metrics: fail→1, pass/warning→0 (METR-2)
+	metrics.AttributeJudge(mres, sc, violation)
 	mres.Pass = metrics.PassFromFindings(mres.Findings)
 }
 
@@ -464,7 +477,8 @@ func cmdReport(args []string) error {
 	if title == "" {
 		title = "all suites"
 	}
-	md := report.Markdown(title, runs, regs)
+	// cmdReport doesn't have suite metrics; pass nil for weights
+	md := report.Markdown(title, runs, regs, nil)
 	if *reportPath != "" {
 		if err := os.MkdirAll(filepath.Dir(*reportPath), 0o755); err != nil {
 			return fmt.Errorf("create report dir: %w", err)
@@ -475,7 +489,7 @@ func cmdReport(args []string) error {
 	}
 	fmt.Print(md)
 	if *htmlPath != "" {
-		h, err := report.HTML(title, runs, regs)
+		h, err := report.HTML(title, runs, regs, nil)
 		if err != nil {
 			return err
 		}
