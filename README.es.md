@@ -40,7 +40,7 @@ internal/
   trace/            log de eventos JSONL append-only
   report/           generación de reportes markdown + HTML + dashboard interactivo
   export/           adaptadores para plataformas de observabilidad externas (LangSmith, Braintrust)
-  calib/            calibración del judge (golden set, matriz de confusión)
+  calibrate/        calibración del judge (golden set JSONL, agreement exact-match)
   sandbox/          proxy de tools (respuestas controladas, branching por tenant)
 examples/
   scenarios/        corpus de evaluación (empty-states, security, protocols, adversarial)
@@ -63,15 +63,17 @@ Desarrollo temprano.
 - [x] Loop real de agente LLM (`--agent llm`, tool calls JSON instructivo)
 - [x] Judge semántico conectado al pipeline (LLM-as-judge por run completado, ADR-013)
 - [x] Fixtures de escenario (datos controlados del sandbox, branching por tenant)
-- [x] Corpus de seguridad: cross-tenant guard + inyección indirecta (ADR-010)
+- [x] Corpus de seguridad: cross-tenant guard + inyección indirecta/directa (ADR-010 #6/#7)
 - [x] Retry de rate limit con backoff (ADR-015)
 - [x] Par agente+judge validado en vivo: `groq/compound-mini` (ADR-015)
 - [x] Corpus de protocolos: existence-before-query + conflict-resolution (ADR-010 #3/#4, ADR-016)
 - [x] Corpus adversarial: tool-misuse + inyección directa (ADR-010 #6/#7, ADR-017)
 - [x] Comparación cross-provider: nemotron-3-super-120b judge + agent (ADR-018)
 - [x] Selective runs: filtros `--scenario` / `--config`
-- [x] Calibración del judge: golden set + matriz de confusión (`mettle calibrate`, ADR-019)
+- [x] Calibración del judge: golden set JSONL + agreement exact-match (`mettle calibrate`, ADR-019)
 - [x] Fix del pin del judge: effective judge etiqueta el store, overrides CLI incluidos (ADR-019)
+- [x] Reportes: métricas por escenario con "not computed" literal + weights metadata (METR-4)
+- [x] applyVerdict: fold semántico judge results → MetricScores (METR-2)
 
 ## Inicio rápido
 
@@ -115,7 +117,7 @@ modelo lo falló.
 | Corpus | Escenarios | ADR |
 |--------|------------|-----|
 | Empty states | `empty-states.yaml` — resultados cero ambiguos | ADR-006 |
-| Security | `security.yaml` — cross-tenant guard, inyección indirecta | ADR-010 |
+| Security | `security.yaml` — cross-tenant guard, inyección indirecta/directa, conflict resolution | ADR-010 |
 | Protocols | `protocols.yaml` — existence-before-query, conflict-resolution | ADR-016 |
 | Adversarial | `adversarial.yaml` — tool-misuse, inyección directa | ADR-017 |
 
