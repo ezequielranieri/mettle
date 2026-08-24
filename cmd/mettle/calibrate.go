@@ -5,105 +5,64 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"sort"
-	"strconv"
-	"strings"
 
-	"mettle/internal/calib"
-	"mettle/internal/metrics"
-	"mettle/internal/store"
+	"mettle/internal/calibrate"
 )
 
-// cmdCalibrate compares judge verdicts against a human-authored golden set
-// (ADR-008) and reports per-judge accuracy. Without --golden it lists the
-// stored runs as TSV so a human can author the ground truth from traces.
+// cmdCalibrate runs judge calibration against a golden set (CAL-1).
+// Usage: mettle calibrate --golden <dir> --provider <p> --model <m> [--threshold 0.9]
+// Dev-only; never wired into CI (ADR-013).
 func cmdCalibrate(args []string) error {
 	fs := flag.NewFlagSet("calibrate", flag.ExitOnError)
-	var stores multiFlag
-	fs.Var(&stores, "store", "SQLite store to read runs from (repeatable; required)")
-	goldenPath := fs.String("golden", "", "golden set YAML of human ground truth")
+	goldenDir := fs.String("golden", "", "directory containing golden JSONL files (required)")
+	provider := fs.String("provider", "", "LLM provider: groq|gemini|ollama|cerebras|sambanova|openrouter (required)")
+	model := fs.String("model", "", "model name (required)")
+	threshold := fs.Float64("threshold", 0.9, "agreement threshold (default 0.9)")
 	_ = fs.Parse(args)
 
-	if len(stores) == 0 {
-		failCalibrate("--store is required")
+	if *goldenDir == "" {
+		return fmt.Errorf("--golden is required")
+	}
+	if *provider == "" {
+		return fmt.Errorf("--provider is required")
+	}
+	if *model == "" {
+		return fmt.Errorf("--model is required")
+	}
+
+	client, err := buildLLMClient(*provider, *model)
+	if err != nil {
+		return err
 	}
 
 	ctx := context.Background()
-	var runs []store.Run
-	for _, path := range stores {
-		st, err := store.Open(path)
-		if err != nil {
-			failCalibrate(err)
-		}
-		got, err := st.ListRuns(ctx, "")
-		st.Close()
-		if err != nil {
-			failCalibrate(err)
-		}
-		runs = append(runs, got...)
+	goldens, err := calibrate.LoadGoldens(*goldenDir)
+	if err != nil {
+		return fmt.Errorf("load goldens: %w", err)
 	}
 
-	if *goldenPath == "" {
-		fmt.Println(strings.Join(calibrateTSV(runs), "\n"))
+	if len(goldens) == 0 {
+		fmt.Fprintln(os.Stderr, "mettle calibrate: no goldens found")
+		return fmt.Errorf("no goldens in %s", *goldenDir)
+	}
+
+	report := calibrate.Run(ctx, client, goldens)
+
+	// Print summary
+	fmt.Printf("Calibration Report\n")
+	fmt.Printf("==================\n")
+	fmt.Printf("Total:     %d\n", report.Total)
+	fmt.Printf("Passed:    %d\n", report.Passed)
+	fmt.Printf("Failed:    %d\n", report.Failed)
+	fmt.Printf("Agreement: %.3f\n", report.Agreement)
+	fmt.Printf("Threshold: %.3f\n", *threshold)
+
+	if report.Agreement >= *threshold {
+		fmt.Printf("Result: PASS (agreement %.3f >= %.3f)\n", report.Agreement, *threshold)
 		return nil
 	}
 
-	goldens, err := calib.LoadGolden(*goldenPath)
-	if err != nil {
-		failCalibrate(err)
-	}
-	res, err := calib.Evaluate(runs, goldens)
-	if err != nil {
-		failCalibrate(err)
-	}
-	fmt.Print(calib.Render(res))
-	if len(res.Missing) > 0 {
-		os.Exit(1)
-	}
-	return nil
-}
-
-// failCalibrate prints a `mettle calibrate:` error to stderr and exits 1.
-func failCalibrate(v ...any) {
-	fmt.Fprintln(os.Stderr, append([]any{"mettle calibrate:"}, v...)...)
+	fmt.Printf("Result: FAIL (agreement %.3f < %.3f)\n", report.Agreement, *threshold)
 	os.Exit(1)
-}
-
-// multiFlag collects repeated --store values.
-type multiFlag []string
-
-func (m *multiFlag) String() string { return strings.Join(*m, ",") }
-
-// Set appends one flag value.
-func (m *multiFlag) Set(v string) error {
-	*m = append(*m, v)
-	return nil
-}
-
-// calibrateTSV renders each run as a tab-separated row for golden authoring
-// (list mode), with only critical findings summarized as code:severity.
-func calibrateTSV(runs []store.Run) []string {
-	sort.Slice(runs, func(i, j int) bool { return runs[i].RunID < runs[j].RunID })
-	lines := []string{"run_id\tscenario\tconfig\tjudge\tpass\tfindings"}
-	for _, r := range runs {
-		var parts []string
-		for _, f := range r.Findings {
-			if f.Severity == metrics.SeverityCritical {
-				parts = append(parts, f.Code+":"+f.Severity)
-			}
-		}
-		findings := strings.Join(parts, ",")
-		if findings == "" {
-			findings = "-"
-		}
-		lines = append(lines, strings.Join([]string{
-			r.RunID,
-			r.Scenario,
-			r.Config,
-			r.Judge,
-			strconv.FormatBool(r.Pass),
-			findings,
-		}, "\t"))
-	}
-	return lines
+	return nil // unreachable, but keeps compiler happy
 }
