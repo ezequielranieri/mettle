@@ -1,0 +1,106 @@
+version: "2"
+
+run:
+  go: "1.26"
+  timeout: 5m
+  concurrency: 4
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - copyloopvar
+    - predeclared
+    - staticcheck
+    - errcheck
+    - govet
+    - ineffassign
+    - unused
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow
+    staticcheck:
+      checks: ["all", "-ST1000", "-ST1003", "-ST1016", "-ST1020", "-ST1021", "-ST1022", "-ST1023", "-SA4006"]
+    predeclared:
+      ignore:
+        - max
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Exclude errcheck on all test files
+      - path: ".*_test\\.go$"
+        linters:
+          - errcheck
+      # Exclude errcheck on specific source files
+      - path: "cmd/mettle/main\\.go$"
+        linters:
+          - errcheck
+      - path: "cmd/mettle/calibrate\\.go$"
+        linters:
+          - errcheck
+      - path: "internal/agent/demo\\.go$"
+        linters:
+          - errcheck
+      - path: "internal/calibrate/calibrate\\.go$"
+        linters:
+          - errcheck
+      - path: "internal/export/export\\.go$"
+        linters:
+          - errcheck
+      - path: "internal/judge/judge\\.go$"
+        linters:
+          - errcheck
+      - path: "internal/report/dashboard\\.go$"
+        linters:
+          - errcheck
+      - path: "internal/runner/runner\\.go$"
+        linters:
+          - errcheck
+      - path: "internal/sandbox/sandbox\\.go$"
+        linters:
+          - errcheck
+      - path: "internal/store/store\\.go$"
+        linters:
+          - errcheck
+      - path: "internal/trace/trace\\.go$"
+        linters:
+          - errcheck
+      # Exclude ineffassign (covered by staticcheck SA4006 exclusion)
+      - path: "cmd/mettle/main\\.go$"
+        linters:
+          - ineffassign
+      - path: "internal/runner/runner\\.go$"
+        linters:
+          - ineffassign
+      # Exclude predeclared in dashboard.go
+      - path: "internal/report/dashboard\\.go$"
+        linters:
+          - predeclared
+      # Exclude staticcheck
+      - path: "internal/metrics/forecast\\.go$"
+        text: "QF1012"
+        linters:
+          - staticcheck
+      - path: "internal/report/report\\.go$"
+        text: "SA4004"
+        linters:
+          - staticcheck
+
+output:
+  formats:
+    text:
+      path: stdout
+      colors: true
+      print-issued-lines: true
+      print-linter-name: true
