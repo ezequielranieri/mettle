@@ -14,13 +14,15 @@ import (
 
 // runRow is the subset of a run the report displays.
 type runRow struct {
-	Scenario   string
-	Config     string
-	Outcome    string
-	Pass       bool
-	RoutingPct float64
-	LatencyMS  int64
-	EstCostUSD float64
+	Scenario    string
+	Config      string
+	Outcome     string
+	Pass        bool
+	RoutingPct  float64
+	LatencyMS   int64
+	EstCostUSD  float64
+	Metrics     []store.MetricScore // per-metric scores for METR-4
+	MetricsHTML string              // pre-formatted for HTML template
 }
 
 // findingRow flattens findings across runs for the report.
@@ -42,6 +44,13 @@ type data struct {
 	PassCount   int
 	FailCount   int
 	TotalCost   float64
+	Weights     []weightRow
+	HasMetrics  bool
+}
+
+type weightRow struct {
+	Name   string
+	Weight float64
 }
 
 func summarize(suite string, runs []store.Run, regs []store.Regression) data {
@@ -55,6 +64,7 @@ func summarize(suite string, runs []store.Run, regs []store.Regression) data {
 		d.Runs = append(d.Runs, runRow{
 			Scenario: r.Scenario, Config: r.Config, Outcome: r.Outcome, Pass: r.Pass,
 			RoutingPct: r.RoutingPct, LatencyMS: r.LatencyMS, EstCostUSD: r.EstCostUSD,
+			Metrics: r.MetricScores,
 		})
 		if r.Pass {
 			d.PassCount++
@@ -75,7 +85,8 @@ func summarize(suite string, runs []store.Run, regs []store.Regression) data {
 func escapeCell(s string) string { return strings.ReplaceAll(s, "|", "\\|") }
 
 // Markdown renders a markdown report for the given runs and regressions.
-func Markdown(suite string, runs []store.Run, regs []store.Regression) string {
+// weights provides per-metric weights as metadata (METR-4).
+func Markdown(suite string, runs []store.Run, regs []store.Regression, weights map[string]float64) string {
 	d := summarize(suite, runs, regs)
 	var b strings.Builder
 
@@ -86,6 +97,22 @@ func Markdown(suite string, runs []store.Run, regs []store.Regression) string {
 	fmt.Fprintf(&b, "- Runs: %d | Pass: %d | Fail: %d\n", len(d.Runs), d.PassCount, d.FailCount)
 	fmt.Fprintf(&b, "- Regressions: %d\n", len(d.Regressions))
 	fmt.Fprintf(&b, "- Total cost: $%.4f\n\n", d.TotalCost)
+
+	// Weights metadata (METR-4)
+	if len(weights) > 0 {
+		fmt.Fprintf(&b, "## Metric Weights (metadata only)\n\n")
+		fmt.Fprintf(&b, "| Metric | Weight |\n")
+		fmt.Fprintf(&b, "|---|---|\n")
+		for _, m := range d.Runs {
+			for _, ms := range m.Metrics {
+				if w, ok := weights[ms.Metric]; ok {
+					fmt.Fprintf(&b, "| %s | %.2f |\n", escapeCell(ms.Metric), w)
+				}
+			}
+			break // only need to list once
+		}
+		fmt.Fprintf(&b, "\n")
+	}
 
 	if len(d.Regressions) > 0 {
 		fmt.Fprintf(&b, "## Regressions\n\n")
@@ -99,12 +126,32 @@ func Markdown(suite string, runs []store.Run, regs []store.Regression) string {
 	}
 
 	fmt.Fprintf(&b, "## Runs\n\n")
-	fmt.Fprintf(&b, "| Scenario | Config | Outcome | Pass | Routing | Latency | Cost |\n")
-	fmt.Fprintf(&b, "|---|---|---|---|---|---|---|\n")
+	// Check if any run has metrics to decide column layout
+	hasMetrics := false
 	for _, r := range d.Runs {
-		fmt.Fprintf(&b, "| %s | %s | %s | %v | %.1f%% | %dms | $%.4f |\n",
-			escapeCell(r.Scenario), escapeCell(r.Config), escapeCell(r.Outcome),
-			r.Pass, r.RoutingPct, r.LatencyMS, r.EstCostUSD)
+		if len(r.Metrics) > 0 {
+			hasMetrics = true
+			break
+		}
+	}
+
+	if hasMetrics {
+		fmt.Fprintf(&b, "| Scenario | Config | Outcome | Pass | Routing | Latency | Cost | Metrics |\n")
+		fmt.Fprintf(&b, "|---|---|---|---|---|---|---|---|\n")
+		for _, r := range d.Runs {
+			metricsCell := formatMetricsCell(r.Metrics)
+			fmt.Fprintf(&b, "| %s | %s | %s | %v | %.1f%% | %dms | $%.4f | %s |\n",
+				escapeCell(r.Scenario), escapeCell(r.Config), escapeCell(r.Outcome),
+				r.Pass, r.RoutingPct, r.LatencyMS, r.EstCostUSD, metricsCell)
+		}
+	} else {
+		fmt.Fprintf(&b, "| Scenario | Config | Outcome | Pass | Routing | Latency | Cost |\n")
+		fmt.Fprintf(&b, "|---|---|---|---|---|---|---|\n")
+		for _, r := range d.Runs {
+			fmt.Fprintf(&b, "| %s | %s | %s | %v | %.1f%% | %dms | $%.4f |\n",
+				escapeCell(r.Scenario), escapeCell(r.Config), escapeCell(r.Outcome),
+				r.Pass, r.RoutingPct, r.LatencyMS, r.EstCostUSD)
+		}
 	}
 	fmt.Fprintf(&b, "\n")
 
@@ -117,6 +164,24 @@ func Markdown(suite string, runs []store.Run, regs []store.Regression) string {
 		fmt.Fprintf(&b, "\n")
 	}
 	return b.String()
+}
+
+// formatMetricsCell formats the per-metric scores for a run row.
+func formatMetricsCell(metrics []store.MetricScore) string {
+	if len(metrics) == 0 {
+		return ""
+	}
+	var parts []string
+	for _, m := range metrics {
+		var valStr string
+		if m.Status == "not_computed" {
+			valStr = "not computed"
+		} else {
+			valStr = fmt.Sprintf("%.2f", m.Value)
+		}
+		parts = append(parts, fmt.Sprintf("%s=%s (%s)", m.Metric, valStr, m.Status))
+	}
+	return strings.Join(parts, "; ")
 }
 
 const htmlTmpl = `<!DOCTYPE html>
@@ -137,6 +202,7 @@ th { background: #f2f2f2; }
 .critical { color: #b91c1c; font-weight: 600; }
 .warning { color: #b45309; font-weight: 600; }
 code { background: #f2f2f2; padding: 0 .25rem; border-radius: 3px; }
+.metrics-cell { font-family: monospace; font-size: 0.85rem; white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -148,6 +214,17 @@ code { background: #f2f2f2; padding: 0 .25rem; border-radius: 3px; }
 <li>Regressions: {{len .Regressions}}</li>
 <li>Total cost: ${{printf "%.4f" .TotalCost}}</li>
 </ul>
+{{if .Weights}}
+<h2>Metric Weights (metadata only)</h2>
+<table>
+<thead><tr><th>Metric</th><th>Weight</th></tr></thead>
+<tbody>
+{{range .Weights}}
+<tr><td>{{.Name}}</td><td>{{printf "%.2f" .Weight}}</td></tr>
+{{end}}
+</tbody>
+</table>
+{{end}}
 {{if .Regressions}}
 <h2>Regressions</h2>
 {{range .Regressions}}
@@ -158,13 +235,19 @@ code { background: #f2f2f2; padding: 0 .25rem; border-radius: 3px; }
 {{end}}
 <h2>Runs</h2>
 <table>
-<thead><tr><th>Scenario</th><th>Config</th><th>Outcome</th><th>Pass</th><th>Routing</th><th>Latency</th><th>Cost</th></tr></thead>
+<thead>
+<tr>
+<th>Scenario</th><th>Config</th><th>Outcome</th><th>Pass</th><th>Routing</th><th>Latency</th><th>Cost</th>
+{{if .HasMetrics}}<th>Metrics</th>{{end}}
+</tr>
+</thead>
 <tbody>
 {{range .Runs}}
 <tr>
 <td>{{.Scenario}}</td><td>{{.Config}}</td><td>{{.Outcome}}</td>
 <td class="{{if .Pass}}pass{{else}}fail{{end}}">{{.Pass}}</td>
 <td>{{printf "%.1f" .RoutingPct}}%</td><td>{{.LatencyMS}}ms</td><td>${{printf "%.4f" .EstCostUSD}}</td>
+{{if $.HasMetrics}}<td class="metrics-cell">{{.MetricsHTML}}</td>{{end}}
 </tr>
 {{end}}
 </tbody>
@@ -183,11 +266,83 @@ code { background: #f2f2f2; padding: 0 .25rem; border-radius: 3px; }
 var tmpl = template.Must(template.New("report").Parse(htmlTmpl))
 
 // HTML renders a self-contained HTML report for the given runs and regressions.
-func HTML(suite string, runs []store.Run, regs []store.Regression) (string, error) {
+// weights provides per-metric weights as metadata (METR-4).
+func HTML(suite string, runs []store.Run, regs []store.Regression, weights map[string]float64) (string, error) {
 	d := summarize(suite, runs, regs)
+
+	// Prepare weights for template
+	var weightRows []weightRow
+	for _, r := range d.Runs {
+		for _, ms := range r.Metrics {
+			if w, ok := weights[ms.Metric]; ok {
+				weightRows = append(weightRows, weightRow{Name: ms.Metric, Weight: w})
+			}
+		}
+		if len(weightRows) > 0 {
+			break
+		}
+	}
+
+	// Check if any run has metrics
+	hasMetrics := false
+	for _, r := range d.Runs {
+		if len(r.Metrics) > 0 {
+			hasMetrics = true
+			break
+		}
+	}
+
+	// Add MetricsHTML to each runRow for template
+	for i := range d.Runs {
+		d.Runs[i].MetricsHTML = formatMetricsHTML(d.Runs[i].Metrics)
+	}
+
+	// Create template data with weights and metrics flag
+	tplData := struct {
+		Suite       string
+		Generated   string
+		Runs        []runRow
+		Regressions []store.Regression
+		Findings    []findingRow
+		PassCount   int
+		FailCount   int
+		TotalCost   float64
+		Weights     []weightRow
+		HasMetrics  bool
+	}{
+		Suite:       d.Suite,
+		Generated:   d.Generated,
+		Runs:        d.Runs,
+		Regressions: d.Regressions,
+		Findings:    d.Findings,
+		PassCount:   d.PassCount,
+		FailCount:   d.FailCount,
+		TotalCost:   d.TotalCost,
+		Weights:     weightRows,
+		HasMetrics:  hasMetrics,
+	}
+
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, d); err != nil {
+	if err := tmpl.Execute(&buf, tplData); err != nil {
 		return "", fmt.Errorf("render html: %w", err)
 	}
 	return buf.String(), nil
+}
+
+// formatMetricsHTML formats the per-metric scores for HTML table cell.
+func formatMetricsHTML(metrics []store.MetricScore) string {
+	if len(metrics) == 0 {
+		return ""
+	}
+	var parts []string
+	for _, m := range metrics {
+		var valStr string
+		if m.Status == "not_computed" {
+			valStr = "not computed"
+		} else {
+			valStr = fmt.Sprintf("%.2f", m.Value)
+		}
+		parts = append(parts, fmt.Sprintf("%s=%s (%s)", m.Metric, valStr, m.Status))
+	}
+	return strings.Join(parts, "; ")
 }
