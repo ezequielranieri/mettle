@@ -8,16 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Integration tests for empty_states distinguish behavior (ADR-006)
-- Explicit tests for empty_states and conflict_resolution (ADR-006, ADR-007)
-- CONTRIBUTING.md with contribution guidelines
+- **Phase 4: Report & wiring (METR-4)**
+  - Per-metric scores column in Markdown/HTML reports with "not computed" literal
+  - Metric weights rendered as metadata (no composite score)
+  - applyVerdict folds semantic judge results into MetricScores (fail=1, pass=0, error=not_computed)
+- **Phase 5: Calibrate v2 (CAL-1)**
+  - New `internal/calibrate` package with JSONL golden sets (replaces internal/calib)
+  - `mettle calibrate` command: --golden/--provider/--model/--threshold flags
+  - 13 golden records from security.yaml corpus (4 scenarios × pass/fail variants)
+  - Threshold-based exit code (0 when agreement >= threshold, non-zero below)
+  - judge_error counts as calibration failure
+  - Dev-only (ci.yml untouched per ADR-013)
 
 ### Fixed
 - XSS vulnerability in dashboard (escape all user data)
 - Removed draft blog post from repository
+- metrics.Compute now receives suite.Metrics for MetricScores computation
 
 ### Changed
 - Updated README architecture diagram (6 commands, calib package)
+- Calibrate command rewritten with JSONL goldens (supersedes YAML-based internal/calib)
 
 ## [0.1.0] - 2026-08-20
 

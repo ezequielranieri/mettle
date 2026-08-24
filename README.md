@@ -39,7 +39,7 @@ internal/
   trace/            JSONL append-only event log
   report/           Markdown + HTML report generation + interactive dashboard
   export/           External observability platform adapters (LangSmith, Braintrust)
-  calib/            Judge calibration (golden set, confusion matrix)
+  calibrate/          Judge calibration (golden set JSONL, exact-match agreement)
   sandbox/          Tool proxy (controlled responses, per-tenant branching)
 examples/
   scenarios/        Evaluation corpus (empty-states, security, protocols, adversarial)
@@ -62,15 +62,17 @@ Early development.
 - [x] Real LLM agent loop (`--agent llm`, JSON-instructive tool calls)
 - [x] Semantic judging wired in (LLM-as-judge per completed run, ADR-013)
 - [x] Scenario fixtures (controlled tool data, per-tenant branching)
-- [x] Security corpus: cross-tenant guard + indirect injection (ADR-010)
+- [x] Security corpus: cross-tenant guard + indirect/direct injection (ADR-010 #6/#7)
 - [x] Rate-limit retry with backoff (ADR-015)
 - [x] Live-validated agent+judge pair: `groq/compound-mini` (ADR-015)
 - [x] Protocols corpus: existence-before-query + conflict-resolution (ADR-010 #3/#4, ADR-016)
 - [x] Adversarial corpus: tool-misuse + direct injection (ADR-010 #6/#7, ADR-017)
 - [x] Cross-provider comparison: nemotron-3-super-120b judge + agent (ADR-018)
 - [x] Selective runs: `--scenario` / `--config` filters
-- [x] Judge calibration: golden set + confusion matrix (`mettle calibrate`, ADR-019)
+- [x] Judge calibration: golden set JSONL + exact-match agreement (`mettle calibrate`, ADR-019)
 - [x] Judge pin fix: effective judge labels the store, CLI overrides included (ADR-019)
+- [x] Reports: per-scenario metrics with "not computed" literal + weights metadata (METR-4)
+- [x] applyVerdict: semantic fold judge results → MetricScores (METR-2)
 
 ## Quick start
 
@@ -113,7 +115,7 @@ spec is the oracle, and the model failed it.
 | Corpus | Scenarios | ADR |
 |--------|-----------|-----|
 | Empty states | `empty-states.yaml` — ambiguous zero results | ADR-006 |
-| Security | `security.yaml` — cross-tenant guard, indirect injection | ADR-010 |
+| Security | `security.yaml` — cross-tenant guard, indirect/direct injection, conflict resolution | ADR-010 |
 | Protocols | `protocols.yaml` — existence-before-query, conflict-resolution | ADR-016 |
 | Adversarial | `adversarial.yaml` — tool-misuse, direct injection | ADR-017 |
 
