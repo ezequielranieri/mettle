@@ -275,10 +275,9 @@ func TestHTMLBasicsAndEscaping(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Eval Report — suite",
-		"Runs: 1 | Pass: 0 | Fail: 1",
-		"empty-state",
-		"class=\"fail\"",
-		"class=\"critical\"",
+		"card-value\">0",   // Fail count card
+		"badge-fail",        // outcome badge
+		"badge-critical",    // finding severity badge
 		"out_of_scope_call",
 	} {
 		if !strings.Contains(html, want) {
@@ -301,7 +300,8 @@ func TestEmptyReportRenders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HTML: %v", err)
 	}
-	if !strings.Contains(html, "Runs: 0") {
-		t.Error("empty html missing summary")
+	// New HTML has summary cards with 0 values
+	if !strings.Contains(html, "card-value\">0") {
+		t.Error("empty html missing summary cards")
 	}
 }

@@ -191,32 +191,119 @@ const htmlTmpl = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Eval Report — {{.Suite}}</title>
 <style>
-body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto; max-width: 60rem; color: #1a1a1a; }
-h1 { border-bottom: 2px solid #333; padding-bottom: .25rem; }
-table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
-th, td { border: 1px solid #ccc; padding: .4rem .6rem; text-align: left; }
-th { background: #f2f2f2; }
-.pass { color: #166534; font-weight: 600; }
-.fail { color: #b91c1c; font-weight: 600; }
-.regression { background: #fef2f2; border-left: 4px solid #b91c1c; padding: .5rem 1rem; margin: 1rem 0; }
-.critical { color: #b91c1c; font-weight: 600; }
-.warning { color: #b45309; font-weight: 600; }
-code { background: #f2f2f2; padding: 0 .25rem; border-radius: 3px; }
-.metrics-cell { font-family: monospace; font-size: 0.85rem; white-space: pre-wrap; }
+:root {
+  --bg: #0a0a0b;
+  --surface: #18181b;
+  --surface-hover: #27272a;
+  --border: #3f3f46;
+  --text: #fafafa;
+  --text-muted: #a1a1aa;
+  --pass: #22c55e;
+  --pass-bg: rgba(34, 197, 94, 0.15);
+  --fail: #ef4444;
+  --fail-bg: rgba(239, 68, 68, 0.15);
+  --warn: #fbbf24;
+  --warn-bg: rgba(251, 191, 36, 0.15);
+  --primary: #3b82f6;
+  --primary-bg: rgba(59, 130, 246, 0.15);
+  --mono: ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  margin: 0; padding: 2rem 1.5rem;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  max-width: 80rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+h1 { font-size: 2rem; font-weight: 700; margin: 0 0 0.5rem; letter-spacing: -0.02em; }
+h1 small { font-size: 1rem; font-weight: 400; color: var(--text-muted); }
+.subtitle { color: var(--text-muted); font-size: 0.95rem; }
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  margin: 2rem 0;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem 1rem;
+  text-align: center;
+}
+.card-value { font-size: 2.25rem; font-weight: 700; line-height: 1.1; }
+.card-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-top: 0.25rem; }
+.card.pass .card-value { color: var(--pass); }
+.card.fail .card-value { color: var(--fail); }
+.card.regression .card-value { color: var(--warn); }
+.card.cost .card-value { color: var(--primary); font-family: var(--mono); font-size: 1.5rem; }
+h2 { font-size: 1.25rem; font-weight: 600; margin: 2.5rem 0 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.875rem; }
+th, td { border: 1px solid var(--border); padding: 0.6rem 0.85rem; text-align: left; vertical-align: top; }
+th { background: var(--surface); font-weight: 600; color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+tr:hover td { background: var(--surface-hover); }
+td.code, .metrics-cell { font-family: var(--mono); font-size: 0.8rem; white-space: pre-wrap; }
+.badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.badge-pass { background: var(--pass-bg); color: var(--pass); }
+.badge-fail { background: var(--fail-bg); color: var(--fail); }
+.badge-critical { background: var(--fail-bg); color: var(--fail); }
+.badge-warning { background: var(--warn-bg); color: #92400e; }
+.badge-not-computed { background: var(--surface); color: var(--text-muted); border: 1px solid var(--border); }
+.regression-card { background: var(--fail-bg); border: 1px solid var(--fail); border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+.regression-card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; color: var(--fail); }
+.findings-list { list-style: none; padding: 0; margin: 1rem 0; }
+.findings-list li { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; }
+.finding-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+.finding-meta { font-family: var(--mono); font-size: 0.75rem; color: var(--text-muted); }
+.finding-message { color: var(--text); line-height: 1.6; }
+.weights-table td:first-child { font-family: var(--mono); }
+footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border); text-align: center; color: var(--text-muted); font-size: 0.8rem; }
+@media (max-width: 640px) {
+  body { padding: 1rem; }
+  .summary-cards { grid-template-columns: 1fr 1fr; }
+  table { font-size: 0.75rem; }
+  th, td { padding: 0.4rem 0.5rem; }
+}
 </style>
 </head>
 <body>
-<h1>Eval Report — {{.Suite}}</h1>
-<p>Generated: {{.Generated}}</p>
-<h2>Summary</h2>
-<ul>
-<li>Runs: {{len .Runs}} | Pass: {{.PassCount}} | Fail: {{.FailCount}}</li>
-<li>Regressions: {{len .Regressions}}</li>
-<li>Total cost: ${{printf "%.4f" .TotalCost}}</li>
-</ul>
+<header>
+  <h1>Eval Report <small>— {{.Suite}}</small></h1>
+  <p class="subtitle">Generated {{.Generated}} | mettle v0.1.0</p>
+</header>
+
+<div class="summary-cards">
+  <div class="card pass">
+    <div class="card-value">{{.PassCount}}</div>
+    <div class="card-label">Passed</div>
+  </div>
+  <div class="card fail">
+    <div class="card-value">{{.FailCount}}</div>
+    <div class="card-label">Failed</div>
+  </div>
+  <div class="card regression">
+    <div class="card-value">{{len .Regressions}}</div>
+    <div class="card-label">Regressions</div>
+  </div>
+  <div class="card cost">
+    <div class="card-value">${{printf "%.4f" .TotalCost}}</div>
+    <div class="card-label">Total Cost</div>
+  </div>
+</div>
+
 {{if .Weights}}
 <h2>Metric Weights (metadata only)</h2>
-<table>
+<table class="weights-table">
 <thead><tr><th>Metric</th><th>Weight</th></tr></thead>
 <tbody>
 {{range .Weights}}
@@ -225,15 +312,21 @@ code { background: #f2f2f2; padding: 0 .25rem; border-radius: 3px; }
 </tbody>
 </table>
 {{end}}
+
 {{if .Regressions}}
 <h2>Regressions</h2>
 {{range .Regressions}}
-<div class="regression"><strong>{{.Scenario}} / {{.Config}}</strong>
-<ul>{{range .Reasons}}<li>{{.}}</li>{{end}}</ul>
+<div class="regression-card">
+  <h3>{{.Scenario}} / {{.Config}}</h3>
+  <ul style="margin:0; padding-left:1.25rem;">
+  {{range .Reasons}}<li>{{.}}</li>{{end}}
+  </ul>
 </div>
 {{end}}
 {{end}}
+
 <h2>Runs</h2>
+<div style="overflow-x:auto;">
 <table>
 <thead>
 <tr>
@@ -244,22 +337,39 @@ code { background: #f2f2f2; padding: 0 .25rem; border-radius: 3px; }
 <tbody>
 {{range .Runs}}
 <tr>
-<td>{{.Scenario}}</td><td>{{.Config}}</td><td>{{.Outcome}}</td>
-<td class="{{if .Pass}}pass{{else}}fail{{end}}">{{.Pass}}</td>
-<td>{{printf "%.1f" .RoutingPct}}%</td><td>{{.LatencyMS}}ms</td><td>${{printf "%.4f" .EstCostUSD}}</td>
+<td class="code">{{.Scenario}}</td>
+<td class="code">{{.Config}}</td>
+<td><span class="badge {{if eq .Outcome "pass"}}badge-pass{{else}}badge-fail{{end}}">{{.Outcome}}</span></td>
+<td><span class="badge {{if .Pass}}badge-pass{{else}}badge-fail{{end}}">{{.Pass}}</span></td>
+<td>{{printf "%.1f" .RoutingPct}}%</td>
+<td class="code">{{.LatencyMS}}ms</td>
+<td class="code">${{printf "%.4f" .EstCostUSD}}</td>
 {{if $.HasMetrics}}<td class="metrics-cell">{{.MetricsHTML}}</td>{{end}}
 </tr>
 {{end}}
 </tbody>
 </table>
+</div>
+
 {{if .Findings}}
 <h2>Findings</h2>
-<ul>
+<ul class="findings-list">
 {{range .Findings}}
-<li><span class="{{.Severity}}">{{.Severity}}</span> <code>{{.Code}}</code> ({{.Scenario}} / {{.Config}}): {{.Message}}</li>
+<li>
+  <div class="finding-header">
+    <span class="badge {{if eq .Severity "critical"}}badge-critical{{else if eq .Severity "warning"}}badge-warning{{else}}badge-not-computed{{end}}">{{.Severity}}</span>
+    <code class="code">{{.Code}}</code>
+    <span class="finding-meta">{{.Scenario}} / {{.Config}} (run: {{.RunID}})</span>
+  </div>
+  <div class="finding-message">{{.Message}}</div>
+</li>
 {{end}}
 </ul>
 {{end}}
+
+<footer>
+  Generated by <a href="https://github.com/ezequielranieri/mettle" style="color:var(--primary);">mettle</a> — Agent Evaluation & Safety Framework
+</footer>
 </body>
 </html>`
 
