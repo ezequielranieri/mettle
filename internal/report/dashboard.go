@@ -35,8 +35,9 @@ type DashboardRun struct {
 	RunID              string           `json:"run_id"`
 	Scenario           string           `json:"scenario"`
 	Config             string           `json:"config"`
-	Outcome            string           `json:"outcome"`
-	Pass               bool             `json:"pass"`
+	Outcome            string           `json:"outcome"`            // harness-level: "pass" | "error"
+	Pass               bool             `json:"pass"`               // evaluation-level: oracle+judge
+	Result             string           `json:"result"`             // human-facing: "pass" | "fail" | "error"
 	Judge              string           `json:"judge"`
 	TraceFile          string           `json:"trace_file"`
 	CreatedAt          string           `json:"created_at"`
@@ -100,12 +101,24 @@ func buildDashboardData(suite string, runs []store.Run, regs []store.Regression)
 	var totalRouting float64
 
 	for _, r := range runs {
+		// Result combines harness Outcome and evaluation Pass:
+		// - "error" if harness crashed (Outcome="error")
+		// - "fail" if ran cleanly but failed oracle/judge (Outcome="pass", Pass=false)
+		// - "pass" if ran cleanly and passed (Outcome="pass", Pass=true)
+		result := "pass"
+		if r.Outcome == "error" {
+			result = "error"
+		} else if !r.Pass {
+			result = "fail"
+		}
+
 		dr := DashboardRun{
 			RunID:              r.RunID,
 			Scenario:           r.Scenario,
 			Config:             r.Config,
 			Outcome:            r.Outcome,
 			Pass:               r.Pass,
+			Result:             result,
 			Judge:              r.Judge,
 			TraceFile:          r.TraceFile,
 			CreatedAt:          r.CreatedAt.Format("2006-01-02 15:04:05"),
@@ -290,7 +303,7 @@ td.fail { color: var(--fail); }
 <h2>Filters</h2>
 <div class="filters">
   <input type="text" id="search" placeholder="Search scenarios...">
-  <select id="filterOutcome"><option value="">All Outcomes</option><option value="pass">Pass</option><option value="error">Error</option></select>
+  <select id="filterResult"><option value="">All Results</option><option value="pass">Pass</option><option value="fail">Fail</option><option value="error">Error</option></select>
   <select id="filterPass"><option value="">All</option><option value="true">Pass</option><option value="false">Fail</option></select>
 </div>
 
@@ -299,6 +312,7 @@ td.fail { color: var(--fail); }
 <thead><tr>
   <th data-col="scenario">Scenario</th>
   <th data-col="config">Config</th>
+  <th data-col="result">Result</th>
   <th data-col="outcome">Outcome</th>
   <th data-col="pass">Pass</th>
   <th data-col="routing_pct">Routing</th>
@@ -313,6 +327,7 @@ td.fail { color: var(--fail); }
 {{range $i, $r := .Runs}}
 <tr class="run-row" data-idx="{{$i}}">
   <td>{{$r.Scenario}}</td><td>{{$r.Config}}</td>
+  <td><span class="badge {{if eq $r.Result "pass"}}badge-pass{{else if eq $r.Result "fail"}}badge-fail{{else}}badge-critical{{end}}">{{$r.Result}}</span></td>
   <td>{{$r.Outcome}}</td>
   <td class="{{if $r.Pass}}pass{{else}}fail{{end}}">{{$r.Pass}}</td>
   <td>{{printf "%.1f" $r.RoutingPct}}%</td>
@@ -379,11 +394,11 @@ table.querySelectorAll('th').forEach(th => {
 // Filter
 function getFiltered() {
   const q = search.value.toLowerCase();
-  const fo = filterOutcome.value;
+  const fr = filterResult.value;
   const fp = filterPass.value;
   return runs.filter(r => {
     if (q && !r.scenario.toLowerCase().includes(q) && !r.config.toLowerCase().includes(q)) return false;
-    if (fo && r.outcome !== fo) return false;
+    if (fr && r.result !== fr) return false;
     if (fp && String(r.pass) !== fp) return false;
     return true;
   });
@@ -414,7 +429,7 @@ function render() {
 function openDrilldown(r) {
   drillTitle.textContent = r.scenario + ' / ' + r.config;
   drillContent.innerHTML = [
-    ['Run ID', r.run_id], ['Outcome', r.outcome], ['Pass', r.pass],
+    ['Run ID', r.run_id], ['Result', r.result], ['Outcome', r.outcome], ['Pass', r.pass],
     ['Latency', r.latency_ms+'ms'], ['Cost', '$'+r.est_cost_usd.toFixed(4)],
     ['Routing', r.routing_pct.toFixed(1)+'%'], ['Tool Calls', r.tool_calls],
     ['Input Tokens', r.input_tokens], ['Output Tokens', r.output_tokens],
@@ -430,7 +445,7 @@ function openDrilldown(r) {
 }
 
 search.addEventListener('input', render);
-filterOutcome.addEventListener('change', render);
+filterResult.addEventListener('change', render);
 filterPass.addEventListener('change', render);
 render();
 </script>

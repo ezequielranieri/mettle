@@ -16,8 +16,9 @@ import (
 type runRow struct {
 	Scenario    string
 	Config      string
-	Outcome     string
-	Pass        bool
+	Outcome     string // harness-level: "pass" | "error"
+	Pass        bool   // evaluation-level: oracle+judge combined
+	Result      string // human-facing verdict: "pass" | "fail" | "error"
 	RoutingPct  float64
 	LatencyMS   int64
 	EstCostUSD  float64
@@ -61,8 +62,19 @@ func summarize(suite string, runs []store.Run, regs []store.Regression) data {
 		}
 	}
 	for _, r := range runs {
+		// Result combines harness Outcome and evaluation Pass:
+		// - "error" if harness crashed (Outcome="error")
+		// - "fail" if ran cleanly but failed oracle/judge (Outcome="pass", Pass=false)
+		// - "pass" if ran cleanly and passed (Outcome="pass", Pass=true)
+		result := "pass"
+		if r.Outcome == "error" {
+			result = "error"
+		} else if !r.Pass {
+			result = "fail"
+		}
+
 		d.Runs = append(d.Runs, runRow{
-			Scenario: r.Scenario, Config: r.Config, Outcome: r.Outcome, Pass: r.Pass,
+			Scenario: r.Scenario, Config: r.Config, Outcome: r.Outcome, Pass: r.Pass, Result: result,
 			RoutingPct: r.RoutingPct, LatencyMS: r.LatencyMS, EstCostUSD: r.EstCostUSD,
 			Metrics: r.MetricScores,
 		})
@@ -136,21 +148,21 @@ func Markdown(suite string, runs []store.Run, regs []store.Regression, weights m
 	}
 
 	if hasMetrics {
-		fmt.Fprintf(&b, "| Scenario | Config | Outcome | Pass | Routing | Latency | Cost | Metrics |\n")
-		fmt.Fprintf(&b, "|---|---|---|---|---|---|---|---|\n")
+		fmt.Fprintf(&b, "| Scenario | Config | Result | Outcome | Pass | Routing | Latency | Cost | Metrics |\n")
+		fmt.Fprintf(&b, "|---|---|---|---|---|---|---|---|---|\n")
 		for _, r := range d.Runs {
 			metricsCell := formatMetricsCell(r.Metrics)
-			fmt.Fprintf(&b, "| %s | %s | %s | %v | %.1f%% | %dms | $%.4f | %s |\n",
-				escapeCell(r.Scenario), escapeCell(r.Config), escapeCell(r.Outcome),
-				r.Pass, r.RoutingPct, r.LatencyMS, r.EstCostUSD, metricsCell)
+			fmt.Fprintf(&b, "| %s | %s | %s | %s | %v | %.1f%% | %dms | $%.4f | %s |\n",
+				escapeCell(r.Scenario), escapeCell(r.Config), escapeCell(r.Result),
+				escapeCell(r.Outcome), r.Pass, r.RoutingPct, r.LatencyMS, r.EstCostUSD, metricsCell)
 		}
 	} else {
-		fmt.Fprintf(&b, "| Scenario | Config | Outcome | Pass | Routing | Latency | Cost |\n")
-		fmt.Fprintf(&b, "|---|---|---|---|---|---|---|\n")
+		fmt.Fprintf(&b, "| Scenario | Config | Result | Outcome | Pass | Routing | Latency | Cost |\n")
+		fmt.Fprintf(&b, "|---|---|---|---|---|---|---|---|\n")
 		for _, r := range d.Runs {
-			fmt.Fprintf(&b, "| %s | %s | %s | %v | %.1f%% | %dms | $%.4f |\n",
-				escapeCell(r.Scenario), escapeCell(r.Config), escapeCell(r.Outcome),
-				r.Pass, r.RoutingPct, r.LatencyMS, r.EstCostUSD)
+			fmt.Fprintf(&b, "| %s | %s | %s | %s | %v | %.1f%% | %dms | $%.4f |\n",
+				escapeCell(r.Scenario), escapeCell(r.Config), escapeCell(r.Result),
+				escapeCell(r.Outcome), r.Pass, r.RoutingPct, r.LatencyMS, r.EstCostUSD)
 		}
 	}
 	fmt.Fprintf(&b, "\n")
@@ -330,7 +342,7 @@ footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--bord
 <table>
 <thead>
 <tr>
-<th>Scenario</th><th>Config</th><th>Outcome</th><th>Pass</th><th>Routing</th><th>Latency</th><th>Cost</th>
+<th>Scenario</th><th>Config</th><th>Result</th><th>Outcome</th><th>Pass</th><th>Routing</th><th>Latency</th><th>Cost</th>
 {{if .HasMetrics}}<th>Metrics</th>{{end}}
 </tr>
 </thead>
@@ -339,8 +351,9 @@ footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--bord
 <tr>
 <td class="code">{{.Scenario}}</td>
 <td class="code">{{.Config}}</td>
-<td><span class="badge {{if eq .Outcome "pass"}}badge-pass{{else}}badge-fail{{end}}">{{.Outcome}}</span></td>
-<td><span class="badge {{if .Pass}}badge-pass{{else}}badge-fail{{end}}">{{.Pass}}</span></td>
+<td><span class="badge {{if eq .Result "pass"}}badge-pass{{else if eq .Result "fail"}}badge-fail{{else}}badge-critical{{end}}">{{.Result}}</span></td>
+<td class="code">{{.Outcome}}</td>
+<td class="code">{{.Pass}}</td>
 <td>{{printf "%.1f" .RoutingPct}}%</td>
 <td class="code">{{.LatencyMS}}ms</td>
 <td class="code">${{printf "%.4f" .EstCostUSD}}</td>

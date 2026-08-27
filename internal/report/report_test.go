@@ -213,9 +213,9 @@ func TestMarkdownNoMetricsNoColumn(t *testing.T) {
 	if strings.Contains(md, "| Metrics |") {
 		t.Error("should not show Metrics column when no runs have metrics")
 	}
-	// Should have the old 7-column layout
-	if !strings.Contains(md, "| Scenario | Config | Outcome | Pass | Routing | Latency | Cost |") {
-		t.Error("should show 7-column layout when no metrics")
+	// Should have 8-column layout: Scenario | Config | Result | Outcome | Pass | Routing | Latency | Cost
+	if !strings.Contains(md, "| Scenario | Config | Result | Outcome | Pass | Routing | Latency | Cost |") {
+		t.Errorf("should show 8-column layout when no metrics, got: %s", md)
 	}
 }
 
@@ -303,5 +303,82 @@ func TestEmptyReportRenders(t *testing.T) {
 	// New HTML has summary cards with 0 values
 	if !strings.Contains(html, "card-value\">0") {
 		t.Error("empty html missing summary cards")
+	}
+}
+
+func TestResultDerivedFromOutcomeAndPass(t *testing.T) {
+	// Test case: run executes cleanly (Outcome="pass") but fails oracle/judge (Pass=false)
+	// Should produce Result="fail"
+	runs := []store.Run{
+		{
+			RunID:      "run-1",
+			Suite:      "suite",
+			Scenario:   "conflict-resolution-must-log",
+			Config:     "default",
+			Outcome:    "pass", // harness ran cleanly
+			Pass:       false,  // oracle/judge failed
+			LatencyMS:  1000,
+			EstCostUSD: 0.001,
+			RoutingPct: 100,
+			Findings: []store.Finding{
+				{Severity: "critical", Code: "semantic_fail", Message: "agent accessed restricted data"},
+			},
+		},
+		// Control: run that passes everything
+		{
+			RunID:      "run-2",
+			Suite:      "suite",
+			Scenario:   "cross-tenant-guard",
+			Config:     "default",
+			Outcome:    "pass",
+			Pass:       true,
+			LatencyMS:  500,
+			EstCostUSD: 0.0005,
+			RoutingPct: 100,
+		},
+		// Control: harness error
+		{
+			RunID:      "run-3",
+			Suite:      "suite",
+			Scenario:   "broken-scenario",
+			Config:     "default",
+			Outcome:    "error",
+			Pass:       false,
+			LatencyMS:  100,
+			EstCostUSD: 0,
+			RoutingPct: 0,
+		},
+	}
+
+	html, err := HTML("test-suite", runs, nil, nil)
+	if err != nil {
+		t.Fatalf("HTML: %v", err)
+	}
+
+	// Run 1: Outcome=pass, Pass=false → Result="fail"
+	if !strings.Contains(html, `badge-fail">fail</span>`) {
+		t.Errorf("expected Result=fail for run with Outcome=pass Pass=false, got html: %s", html)
+	}
+
+	// Run 2: Outcome=pass, Pass=true → Result="pass"
+	if !strings.Contains(html, `badge-pass">pass</span>`) {
+		t.Errorf("expected Result=pass for run with Outcome=pass Pass=true")
+	}
+
+	// Run 3: Outcome=error → Result="error"
+	if !strings.Contains(html, `badge-critical">error</span>`) {
+		t.Errorf("expected Result=error for run with Outcome=error")
+	}
+
+	// Also verify Markdown includes Result column
+	md := Markdown("test-suite", runs, nil, nil)
+	for _, want := range []string{
+		"| conflict-resolution-must-log | default | fail | pass | false |",
+		"| cross-tenant-guard | default | pass | pass | true |",
+		"| broken-scenario | default | error | error | false |",
+	} {
+		if !strings.Contains(md, want) {
+			t.Errorf("markdown missing expected row %q", want)
+		}
 	}
 }
