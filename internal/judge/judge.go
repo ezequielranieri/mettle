@@ -347,18 +347,31 @@ type chatResponse struct {
 
 // ExtractJSON trims optional code fences and rejects non-JSON. It never
 // guesses: a malformed response is an error (ADR-006 fail-fast).
+// It finds the first ``` and last ``` fence pair anywhere in the string.
 func ExtractJSON(s string) ([]byte, error) {
 	s = strings.TrimSpace(s)
-	if strings.HasPrefix(s, "```") {
-		lines := strings.Split(s, "\n")
-		if len(lines) >= 2 {
-			lines = lines[1:]
+
+	// Find first fence
+	start := strings.Index(s, "```")
+	if start >= 0 {
+		// Find last fence after start
+		end := strings.LastIndex(s, "```")
+		if end > start {
+			// Extract content between fences, skip first line after opening fence
+			content := s[start+3 : end]
+			// Remove the first line if it's just a language hint (e.g., "json")
+			lines := strings.Split(content, "\n")
+			if len(lines) >= 2 {
+				firstLine := strings.TrimSpace(lines[0])
+				// Common language hints
+				if firstLine == "json" || firstLine == "JSON" || firstLine == "jsonc" || firstLine == "" {
+					lines = lines[1:]
+				}
+			}
+			s = strings.TrimSpace(strings.Join(lines, "\n"))
 		}
-		if len(lines) > 0 && strings.HasPrefix(strings.TrimSpace(lines[len(lines)-1]), "```") {
-			lines = lines[:len(lines)-1]
-		}
-		s = strings.TrimSpace(strings.Join(lines, "\n"))
 	}
+
 	if !json.Valid([]byte(s)) {
 		return nil, fmt.Errorf("judge: response is not valid JSON")
 	}

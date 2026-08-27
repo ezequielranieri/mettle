@@ -92,6 +92,10 @@ type DashboardSummary struct {
 
 // buildDashboardData converts store data to dashboard format.
 func buildDashboardData(suite string, runs []store.Run, regs []store.Regression) DashboardData {
+	if len(runs) == 0 {
+		return DashboardData{Suite: suite}
+	}
+
 	d := DashboardData{
 		Suite:     suite,
 		Generated: strings.ReplaceAll(fmt.Sprintf("%v", runs[0].CreatedAt), "Z", ""),

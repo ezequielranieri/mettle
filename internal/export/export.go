@@ -27,6 +27,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"mettle/internal/store"
@@ -244,6 +246,26 @@ func (j *JSON) Export(ctx context.Context, runs []store.Run) error {
 	path := j.cfg.Endpoint
 	if path == "" {
 		path = "export.json"
+	}
+
+	// Validate path: prevent directory traversal outside working directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		path = "export.json"
+	} else {
+		cleanPath := filepath.Clean(absPath)
+		cleanCwd := filepath.Clean(cwd)
+		// Ensure the path is within or equal to the working directory
+		rel, err := filepath.Rel(cleanCwd, cleanPath)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			path = "export.json"
+		} else {
+			path = cleanPath
+		}
 	}
 
 	if err := os.WriteFile(path, payload, 0o644); err != nil {

@@ -10,6 +10,7 @@ package metrics
 
 import (
 	"fmt"
+	"strings"
 
 	"mettle/internal/spec"
 	"mettle/internal/trace"
@@ -199,7 +200,7 @@ func contains(list []string, v string) bool {
 }
 
 // modelRates holds approximate USD per 1M tokens (input, output) for the
-// confirmed free-tier models (ADR-008). Unknown models cost 0: the framework
+// confirmed free-tier models (ADR-008). Keys are lowercase. Unknown models cost 0: the framework
 // does not guess rates (ADR-006).
 var modelRates = map[string][2]float64{
 	"llama-3.3-70b-versatile": {0.59, 0.79},
@@ -208,7 +209,7 @@ var modelRates = map[string][2]float64{
 }
 
 func estimateCost(inTokens, outTokens int, model string) float64 {
-	rates, ok := modelRates[model]
+	rates, ok := modelRates[strings.ToLower(model)]
 	if !ok {
 		return 0
 	}

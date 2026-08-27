@@ -171,7 +171,13 @@ func TestBraintrustExportNoAPIKey(t *testing.T) {
 }
 
 func TestJSONExport(t *testing.T) {
-	dir := t.TempDir()
+	// Use subdir within cwd to satisfy path traversal validation (Option B: restrict to cwd)
+	dir := filepath.Join(".", "testdata", "json-export-test")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
 	outputPath := filepath.Join(dir, "export.json")
 
 	exp, err := New("json", Config{Endpoint: outputPath})
@@ -239,7 +245,13 @@ func TestJSONExportDefaultPath(t *testing.T) {
 }
 
 func TestExportEmptyRuns(t *testing.T) {
-	dir := t.TempDir()
+	// Use subdir within cwd to satisfy path traversal validation (Option B: restrict to cwd)
+	dir := filepath.Join(".", "testdata", "json-export-empty-test")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
 	outputPath := filepath.Join(dir, "export.json")
 
 	exp, err := New("json", Config{Endpoint: outputPath})
