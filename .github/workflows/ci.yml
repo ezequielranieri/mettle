@@ -47,3 +47,27 @@ jobs:
             --store /tmp/ci-eval-adversarial.db \
             --traces /tmp/ci-adversarial-traces \
             --report /tmp/ci-adversarial-report.md
+          go run ./cmd/mettle run \
+            --spec examples/scenarios/security-advanced.yaml \
+            --store /tmp/ci-eval-security-advanced.db \
+            --traces /tmp/ci-security-advanced-traces \
+            --report /tmp/ci-security-advanced-report.md
+
+  quickstart:
+    name: Quickstart verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Run README quickstart (clone -> run security corpus -> generate HTML)
+        run: |
+          go run ./cmd/mettle run \
+            --spec examples/scenarios/security.yaml \
+            --html /tmp/quickstart-report.html
+          test -f /tmp/quickstart-report.html
+          echo "Quickstart HTML report generated successfully"
+          head -50 /tmp/quickstart-report.html
