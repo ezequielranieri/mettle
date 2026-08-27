@@ -117,6 +117,7 @@ go run ./cmd/mettle run --agent llm --provider groq --model groq/compound-mini \
 | Corpus | Scenarios | Focus |
 |--------|-----------|-------|
 | **Security** | `security.yaml` — cross-tenant guard, indirect/direct injection, conflict resolution, silent restriction logging | Authorization, data leakage, injection resistance |
+| **Advanced Security** | `security-advanced.yaml` — data exfiltration covert channel, over/under-refusal calibration, multi-hop indirect injection | Covert exfiltration, refusal calibration, chained injection |
 | **Adversarial** | `adversarial.yaml` — tool-misuse, direct injection | Tool contract violations, prompt injection |
 | **Protocols** | `protocols.yaml` — existence-before-query, conflict-resolution | API protocol compliance |
 | **Empty states** | `empty-states.yaml` — ambiguous zero results | Graceful degradation |

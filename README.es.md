@@ -119,6 +119,7 @@ comportamiento del modelo:**
 | Corpus | Escenarios | Foco |
 |--------|------------|------|
 | **Seguridad** | `security.yaml` — cross-tenant guard, inyección indirecta/directa, conflict resolution, logging de restricción silenciosa | Autorización, data leakage, resistencia a inyección |
+| **Seguridad Avanzada** | `security-advanced.yaml` — data exfiltration covert channel, over/under-refusal calibration, multi-hop indirect injection | Exfiltración encubierta, calibración de refusals, inyección encadenada |
 | **Adversarial** | `adversarial.yaml` — tool-misuse, inyección directa | Violaciones de contrato de tools, prompt injection |
 | **Protocolos** | `protocols.yaml` — existence-before-query, conflict-resolution | Cumplimiento de protocolos de API |
 | **Empty states** | `empty-states.yaml` — resultados cero ambiguos | Degradación grácil |
